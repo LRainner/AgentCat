@@ -1,9 +1,11 @@
 [package]
 name = "agent-cat"
-version = "0.3.3"
+# The distributable app version comes from ../package.json via tauri.conf.json.
+version = "0.0.0"
 description = "An animated desktop companion for AI agents"
 authors = ["Agent Cat contributors"]
 edition = "2021"
+publish = false
 
 [lib]
 name = "agent_cat_lib"
