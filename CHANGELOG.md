@@ -1,0 +1,13 @@
+# Changelog
+
+## [1.0.0](https://github.com/LRainner/AgentCat/compare/v0.3.3...v1.0.0) (2026-07-24)
+
+
+### Features
+
+* add Agent Cat desktop companion with Codex integration ([54d7288](https://github.com/LRainner/AgentCat/commit/54d7288e35ba19ddb6ccc92e6e13809ad711035f))
+
+
+### Continuous Integration
+
+* automate draft GitHub releases ([7184c1d](https://github.com/LRainner/AgentCat/commit/7184c1dd02ba263f1f7d45344e84ba81da4e5f31))
