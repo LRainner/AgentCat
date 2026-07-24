@@ -16,6 +16,12 @@ Agent Cat brings AI agent activity to life through animated desktop pets and rea
 
 > **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and integrates with Codex. Support for more agents and operating systems is planned.
 
+## Download
+
+Download the latest build from [GitHub Releases](https://github.com/LRainner/AgentCat/releases/latest).
+
+The current macOS build is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click Agent Cat and choose **Open**, or allow it from **System Settings → Privacy & Security**. Only install builds downloaded from this repository.
+
 ## Highlights
 
 - Animated desktop pets with click, double-click, drag, idle, and pointer-following reactions
