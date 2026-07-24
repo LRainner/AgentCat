@@ -72,7 +72,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           tagName: ${{ needs.prepare_release.outputs.tag_name }}
-          releaseDraft: true
+          releaseDraft: false
           tauriScript: npm run tauri
           uploadUpdaterJson: false
           args: --target universal-apple-darwin

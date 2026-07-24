@@ -16,6 +16,12 @@ Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变
 
 > **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统，并已集成 Codex；更多 Agent 和操作系统仍在规划中。
 
+## 下载
+
+请从 [GitHub Releases](https://github.com/LRainner/AgentCat/releases/latest) 下载最新版本。
+
+当前 macOS 版本没有使用 Apple Developer ID 进行公证。如果首次启动被 macOS 阻止，请右键点击 Agent Cat 并选择**打开**，或前往**系统设置 → 隐私与安全性**允许打开。请仅安装从本仓库下载的版本。
+
 ## 主要功能
 
 - 桌面宠物动画，支持单击、双击、拖动、空闲动作和跟随鼠标视线
