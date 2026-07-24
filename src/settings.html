@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Cat 设置</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="app-page">
+    <main class="settings-shell">
+      <header><div><p class="eyebrow">AGENT CAT</p><h1>设置</h1></div><button id="refresh-pets">刷新宠物</button></header>
+      <section><h2>宠物</h2><p id="catalog-summary" class="muted">正在扫描…</p><div id="pet-catalog"></div>
+        <div class="inline-form"><input id="extra-directory" placeholder="/Users/me/Downloads/codex-pets" /><button id="add-directory">添加目录</button><button id="open-codex-pets" class="secondary">打开 ~/.codex/pets</button></div>
+        <div id="extra-directories" class="directory-list"></div>
+      </section>
+      <section><h2>显示</h2><div class="settings-grid">
+        <label>宠物大小 <input id="scale" type="range" min="0.4" max="2" step="0.01" /><output id="scale-value"></output></label>
+        <label>宠物透明度 <input id="pet-opacity" type="range" min="0.2" max="1" step="0.01" /><output id="pet-opacity-value"></output></label>
+        <label>气泡大小 <input id="bubble-scale" type="range" min="0.65" max="1.5" step="0.01" /><output id="bubble-scale-value"></output></label>
+        <label>气泡透明度 <input id="bubble-opacity" type="range" min="0.2" max="1" step="0.01" /><output id="bubble-opacity-value"></output></label>
+        <label><input id="always-on-top" type="checkbox" /> 始终置顶</label>
+        <label><input id="mouse-passthrough" type="checkbox" /> 鼠标穿透</label>
+        <label><input id="lock-position" type="checkbox" /> 锁定位置</label>
+        <label><input id="launch-at-login" type="checkbox" /> 登录时启动</label>
+      </div><button id="reset-position" class="secondary">恢复默认位置</button></section>
+      <section><h2>行为</h2><div class="settings-grid">
+        <label><input id="follow-pointer" type="checkbox" /> 空闲时看向鼠标</label>
+        <label><input id="click-wave" type="checkbox" /> 单击挥手</label>
+        <label><input id="double-jump" type="checkbox" /> 双击跳跃</label>
+        <label><input id="codex-link" type="checkbox" /> Codex 工作状态联动</label>
+        <label>响应半径 <input id="pointer-radius" type="range" min="100" max="1200" step="50" /><output id="pointer-radius-value"></output></label>
+        <label>中心死区 <input id="pointer-deadzone" type="range" min="0" max="120" step="4" /><output id="pointer-deadzone-value"></output></label>
+      </div></section>
+      <section><h2>Codex</h2>
+        <div id="codex-integration" class="integration-card" data-state="checking">
+          <div class="integration-heading">
+            <span class="integration-dot" aria-hidden="true"></span>
+            <div class="integration-copy">
+              <strong id="codex-integration-title">正在检查 Codex 连接…</strong>
+              <p id="codex-integration-detail">Agent Cat 正在检查 Hook 配置和本地状态接收器。</p>
+            </div>
+            <span id="codex-integration-badge" class="integration-badge">检查中</span>
+          </div>
+          <div class="integration-meta">
+            <span><small>Hook 配置</small><strong id="hook-status">检查中</strong></span>
+            <span><small>状态接收器</small><strong id="receiver-status">检查中</strong></span>
+            <span><small>最后事件</small><strong id="last-event-status">暂无</strong></span>
+          </div>
+          <div class="button-row">
+            <button id="connect-codex">一键连接并测试</button>
+            <button id="install-hook" class="secondary">安装 / 修复</button>
+            <button id="uninstall-hook" class="danger">卸载</button>
+            <button id="test-hook" class="secondary">重新测试</button>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <label><input id="show-live-status" type="checkbox" /> 在宠物旁显示实时状态</label>
+          <label><input id="show-task-summary" type="checkbox" /> 显示任务摘要</label>
+        </div>
+        <p class="privacy-note">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
+        <div class="button-row"><button id="open-debug" class="secondary">动画测试器</button></div>
+      </section>
+      <div id="settings-message" role="status"></div>
+    </main>
+    <script type="module" src="/settings.ts"></script>
+  </body>
+</html>

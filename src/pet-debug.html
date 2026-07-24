@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Cat 动画测试器</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="debug-page">
+    <main class="debug-shell">
+      <header><div><p class="eyebrow">PET LAB</p><h1>动画测试器</h1></div><select id="debug-pet"></select></header>
+      <section class="debug-workbench">
+        <div id="debug-stage"><div id="debug-sprite" class="pet-sprite"></div></div>
+        <aside><label>缩放 <input id="debug-scale" type="range" min="0.4" max="1.5" value="1" step="0.05" /></label><label>背景色 <input id="debug-background" type="color" value="#dce8ea" /></label><pre id="debug-info"></pre><div id="debug-validation"></div></aside>
+      </section>
+      <section><h2>标准动画</h2><div id="animation-buttons" class="button-grid"></div><h2>观察方向（v2）</h2><div id="look-buttons" class="button-grid"></div></section>
+    </main>
+    <script type="module" src="/pet-debug.ts"></script>
+  </body>
+</html>

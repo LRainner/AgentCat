@@ -1,0 +1,8 @@
+{
+  "id": "fixture-cat-v2",
+  "displayName": "Fixture Cat v2",
+  "description": "Original deterministic test fixture for Agent Cat",
+  "spriteVersionNumber": 2,
+  "spritesheetPath": "spritesheet.png",
+  "futureFieldMustBeIgnored": { "nested": "value" }
+}

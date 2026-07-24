@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN" class="status-window">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Cat 实时状态</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="status-page">
+    <main id="live-status" data-phase="thinking" aria-live="polite" hidden>
+      <div class="status-card">
+        <div class="status-copy">
+          <div id="status-title"></div>
+          <div id="status-detail"></div>
+        </div>
+        <span class="status-indicator" aria-hidden="true"></span>
+      </div>
+    </main>
+    <script type="module" src="/status.ts"></script>
+  </body>
+</html>

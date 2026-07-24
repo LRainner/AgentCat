@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for Agent Cat windows",
+  "windows": ["main", "settings", "pet-debug"],
+  "permissions": ["core:default"]
+}

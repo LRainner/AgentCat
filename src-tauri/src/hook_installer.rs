@@ -1,0 +1,318 @@
+use crate::config;
+use serde::Serialize;
+use serde_json::{json, Value};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+const EVENTS: [&str; 10] = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
+    "PermissionRequest",
+    "Stop",
+];
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HookStatus {
+    pub path: String,
+    pub exists: bool,
+    pub valid: bool,
+    pub installed_events: usize,
+    pub expected_events: usize,
+    pub message: String,
+}
+
+fn path() -> Result<PathBuf, String> {
+    Ok(config::home_dir()?.join(".codex/hooks.json"))
+}
+
+pub fn status() -> Result<HookStatus, String> {
+    let path = path()?;
+    if !path.exists() {
+        return Ok(HookStatus {
+            path: path.to_string_lossy().to_string(),
+            exists: false,
+            valid: true,
+            installed_events: 0,
+            expected_events: EVENTS.len(),
+            message: "尚未安装 Agent Cat Hook".into(),
+        });
+    }
+    let value = parse_existing(&path)?;
+    let command = expected_command()?;
+    let installed_events = EVENTS
+        .iter()
+        .filter(|event| event_contains_command(&value, event, &command))
+        .count();
+    Ok(HookStatus {
+        path: path.to_string_lossy().to_string(),
+        exists: true,
+        valid: true,
+        installed_events,
+        expected_events: EVENTS.len(),
+        message: if installed_events == EVENTS.len() {
+            "Agent Cat Hook 已安装".into()
+        } else {
+            format!(
+                "已安装 {installed_events}/{} 个事件，需要修复",
+                EVENTS.len()
+            )
+        },
+    })
+}
+
+pub fn install() -> Result<HookStatus, String> {
+    let path = path()?;
+    let mut root = if path.exists() {
+        parse_existing(&path)?
+    } else {
+        json!({})
+    };
+    if !root.is_object() {
+        return Err("hooks.json 顶层必须是 JSON 对象；未覆盖原文件".into());
+    }
+    let command = expected_command()?;
+    remove_agent_cat_entries(&mut root);
+    add_agent_cat_entries(&mut root, &command)?;
+    let bytes = serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?;
+    config::atomic_write(&path, &bytes)?;
+    status()
+}
+
+fn expected_command() -> Result<String, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("无法确定 Agent Cat 可执行文件：{error}"))?;
+    Ok(build_hook_command(&executable))
+}
+
+fn build_hook_command(executable: &Path) -> String {
+    format!(
+        "{} hook --agent codex >/dev/null 2>&1 || true",
+        shell_quote(&executable.to_string_lossy())
+    )
+}
+
+fn add_agent_cat_entries(root: &mut Value, command: &str) -> Result<(), String> {
+    let missing: Vec<&str> = EVENTS
+        .iter()
+        .copied()
+        .filter(|event| !event_contains_agent_cat(root, event))
+        .collect();
+    let root_object = root.as_object_mut().unwrap();
+    let hooks = root_object.entry("hooks").or_insert_with(|| json!({}));
+    if !hooks.is_object() {
+        return Err("hooks.json 的 hooks 字段必须是对象；未覆盖原文件".into());
+    }
+    for event in missing {
+        let event_groups = hooks
+            .as_object_mut()
+            .unwrap()
+            .entry(event)
+            .or_insert_with(|| json!([]));
+        let groups = event_groups
+            .as_array_mut()
+            .ok_or_else(|| format!("hooks.{event} 必须是数组；未覆盖原文件"))?;
+        groups.push(json!({
+            "hooks": [{
+                "type": "command",
+                "command": command,
+                "timeout": 2
+            }]
+        }));
+    }
+    Ok(())
+}
+
+pub fn uninstall() -> Result<HookStatus, String> {
+    let path = path()?;
+    if !path.exists() {
+        return status();
+    }
+    let mut root = parse_existing(&path)?;
+    remove_agent_cat_entries(&mut root);
+    let bytes = serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?;
+    config::atomic_write(&path, &bytes)?;
+    status()
+}
+
+fn remove_agent_cat_entries(root: &mut Value) {
+    if let Some(events) = root.get_mut("hooks").and_then(Value::as_object_mut) {
+        for event in EVENTS {
+            let Some(groups) = events.get_mut(event).and_then(Value::as_array_mut) else {
+                continue;
+            };
+            for group in groups.iter_mut() {
+                if let Some(commands) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                    commands.retain(|command| !is_agent_cat_command(command));
+                }
+            }
+            groups.retain(|group| {
+                group
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .map(|items| !items.is_empty())
+                    .unwrap_or(true)
+            });
+        }
+        events.retain(|_, groups| {
+            groups
+                .as_array()
+                .map(|items| !items.is_empty())
+                .unwrap_or(true)
+        });
+    }
+}
+
+fn parse_existing(path: &std::path::Path) -> Result<Value, String> {
+    let bytes = fs::read(path).map_err(|error| format!("读取 {} 失败：{error}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|error| {
+        format!(
+            "{} 无法解析：{error}。为保护现有 Hook，Agent Cat 不会覆盖它。",
+            path.display()
+        )
+    })
+}
+
+fn event_contains_agent_cat(root: &Value, event: &str) -> bool {
+    root.get("hooks")
+        .and_then(|value| value.get(event))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|group| {
+            group
+                .get("hooks")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .any(is_agent_cat_command)
+        })
+}
+
+fn event_contains_command(root: &Value, event: &str, expected: &str) -> bool {
+    root.get("hooks")
+        .and_then(|value| value.get(event))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|group| {
+            group
+                .get("hooks")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .any(|command| command.get("command").and_then(Value::as_str) == Some(expected))
+        })
+}
+
+fn is_agent_cat_command(value: &Value) -> bool {
+    value
+        .get("command")
+        .and_then(Value::as_str)
+        .map(|command| command.contains("agent-cat") && command.contains("hook --agent codex"))
+        .unwrap_or(false)
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn marker_detection_is_narrow() {
+        assert!(is_agent_cat_command(
+            &json!({"command": "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex"})
+        ));
+        assert!(!is_agent_cat_command(
+            &json!({"command": "other-tool hook --agent codex"})
+        ));
+    }
+
+    #[test]
+    fn hook_command_never_surfaces_relay_failures_to_codex() {
+        let command = build_hook_command(Path::new(
+            "/Applications/Agent Cat.app/Contents/MacOS/agent-cat",
+        ));
+        assert_eq!(
+            command,
+            "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex >/dev/null 2>&1 || true"
+        );
+    }
+
+    #[test]
+    fn install_is_idempotent_and_uninstall_preserves_other_hooks() {
+        let mut root = json!({
+            "futureTopLevel": true,
+            "hooks": { "SessionStart": [{ "matcher": "startup", "hooks": [{ "type": "command", "command": "other-tool notify" }] }] }
+        });
+        add_agent_cat_entries(
+            &mut root,
+            "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex",
+        )
+        .unwrap();
+        add_agent_cat_entries(
+            &mut root,
+            "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex",
+        )
+        .unwrap();
+        assert_eq!(
+            EVENTS
+                .iter()
+                .filter(|event| event_contains_agent_cat(&root, event))
+                .count(),
+            EVENTS.len()
+        );
+        for event in EVENTS {
+            let agent_cat_handler = root["hooks"][event]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|group| group["hooks"].as_array().into_iter().flatten())
+                .find(|handler| is_agent_cat_command(handler))
+                .unwrap();
+            assert!(agent_cat_handler.get("async").is_none());
+            assert_eq!(agent_cat_handler["timeout"], 2);
+        }
+        let session_groups = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session_groups.len(), 2);
+        remove_agent_cat_entries(&mut root);
+        assert_eq!(root["futureTopLevel"], true);
+        assert_eq!(
+            root["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "other-tool notify"
+        );
+        assert!(EVENTS
+            .iter()
+            .all(|event| !event_contains_agent_cat(&root, event)));
+    }
+
+    #[test]
+    fn exact_command_detection_marks_moved_apps_for_repair() {
+        let root = json!({
+            "hooks": {
+                "SessionStart": [{
+                    "hooks": [{
+                        "type": "command",
+                        "command": "'/Applications/Old Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex"
+                    }]
+                }]
+            }
+        });
+        assert!(event_contains_agent_cat(&root, "SessionStart"));
+        assert!(!event_contains_command(
+            &root,
+            "SessionStart",
+            "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex"
+        ));
+    }
+}

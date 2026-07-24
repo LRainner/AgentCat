@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN" class="pet-window">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Cat</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="pet-page">
+    <main id="pet-stage" aria-label="Agent Cat desktop pet">
+      <div id="fallback-cat" aria-hidden="true">
+        <svg viewBox="0 0 256 256" role="presentation">
+          <path d="M62 184 C55 168 57 143 70 126 L66 78 L111 99 C126 93 144 94 157 100 L196 81 L194 120 L207 132 L198 141 L207 151 L198 160 C202 177 193 193 176 202 C160 210 104 209 84 198 C76 194 68 189 62 184Z" />
+          <path class="fallback-eyes" d="M96 145 H110 M151 145 H165" />
+          <circle cx="131" cy="164" r="5" />
+        </svg>
+      </div>
+      <div id="pet-sprite" class="pet-sprite" aria-hidden="true"></div>
+      <div id="pet-error" role="status"></div>
+    </main>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
