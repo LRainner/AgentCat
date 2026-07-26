@@ -30,7 +30,9 @@ function requireAsset(predicate, description) {
 
 async function signatureFor(asset) {
   const signatureAsset = requireAsset((name) => name === `${asset.name}.sig`, `${asset.name}.sig`);
-  const response = await fetch(signatureAsset.browser_download_url, { headers });
+  const response = await fetch(signatureAsset.url, {
+    headers: { ...headers, Accept: "application/octet-stream" },
+  });
   if (!response.ok) throw new Error(`Signature download failed for ${signatureAsset.name}: ${response.status}`);
   return (await response.text()).trim();
 }
