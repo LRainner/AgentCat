@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/LRainner/AgentCat/compare/v1.1.0...v1.2.0) (2026-07-26)
+
+
+### Features
+
+* add in-app updater and settings navigation ([#9](https://github.com/LRainner/AgentCat/issues/9)) ([a8fc772](https://github.com/LRainner/AgentCat/commit/a8fc772567b72e996ef44fdc715fdc833c665564))
+* **windows:** allow choosing installation scope ([#7](https://github.com/LRainner/AgentCat/issues/7)) ([8a58ef5](https://github.com/LRainner/AgentCat/commit/8a58ef5e0b5d005956133948104d8d669d5f63df))
+
 ## [1.1.0](https://github.com/LRainner/AgentCat/compare/v1.0.0...v1.1.0) (2026-07-26)
 
 
