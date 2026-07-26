@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 const [tag, output = "latest.json"] = process.argv.slice(2);
 const repository = process.env.GITHUB_REPOSITORY;
 const token = process.env.GITHUB_TOKEN;
+const releaseId = process.env.GITHUB_RELEASE_ID;
 
 if (!tag || !repository || !token) {
   throw new Error("Usage: GITHUB_REPOSITORY=owner/repo GITHUB_TOKEN=... node scripts/generate-updater-manifest.mjs <tag> [output]");
@@ -14,7 +15,10 @@ const headers = {
   "X-GitHub-Api-Version": "2022-11-28",
 };
 
-const releaseResponse = await fetch(`https://api.github.com/repos/${repository}/releases/tags/${encodeURIComponent(tag)}`, { headers });
+const releasePath = releaseId
+  ? `releases/${encodeURIComponent(releaseId)}`
+  : `releases/tags/${encodeURIComponent(tag)}`;
+const releaseResponse = await fetch(`https://api.github.com/repos/${repository}/${releasePath}`, { headers });
 if (!releaseResponse.ok) throw new Error(`GitHub release request failed: ${releaseResponse.status}`);
 const release = await releaseResponse.json();
 
