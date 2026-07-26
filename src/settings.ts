@@ -1,9 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { emit, listen } from "@tauri-apps/api/event";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { AppConfig, CatalogResult, PetDescriptor, PetSource } from "./types";
+import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgressPercent } from "./update-progress";
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; installedEvents: number; expectedEvents: number; message: string };
 type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; lastEventAt: number | null; lastEvent: string | null; lastEventIsTest: boolean };
+type SettingsPage = "general" | "codex" | "about";
+
+const settingsPageCopy: Record<SettingsPage, { eyebrow: string; title: string; description: string }> = {
+  general: { eyebrow: "PREFERENCES", title: "通用", description: "选择宠物并调整它在桌面上的表现。" },
+  codex: { eyebrow: "INTEGRATIONS", title: "Codex", description: "管理 Hook 连接、实时状态和任务摘要。" },
+  about: { eyebrow: "ABOUT", title: "关于", description: "查看 Agent Cat 版本和软件更新。" },
+};
 
 const sourceLabels: Record<PetSource, string> = { "codex-builtin": "Codex 内置", "codex-custom": "Codex 自定义宠物", "user-folder": "其他目录" };
 const eventLabels: Record<string, string> = {
@@ -22,6 +33,8 @@ const eventLabels: Record<string, string> = {
 const message = document.querySelector<HTMLElement>("#settings-message")!;
 const catalogElement = document.querySelector<HTMLElement>("#pet-catalog")!;
 const summary = document.querySelector<HTMLElement>("#catalog-summary")!;
+const appIconUrl = new URL("../assets/app-icon.svg", import.meta.url).href;
+for (const image of document.querySelectorAll<HTMLImageElement>(".settings-brand-mark, .about-logo")) image.src = appIconUrl;
 let config: AppConfig;
 let catalog: CatalogResult;
 let persistQueue: Promise<void> = Promise.resolve();
@@ -29,15 +42,145 @@ let hookRefreshRequest = 0;
 let persistTimer: number | null = null;
 let previewFrame: number | null = null;
 let pendingPreview: AppConfig | null = null;
+let currentVersion = "";
+let pendingUpdate: Update | null = null;
+let updateInstalling = false;
 const previewImageCache = new Map<string, Promise<string>>();
 const configEventSource = `settings-${crypto.randomUUID()}`;
 
 function input<T extends HTMLInputElement>(id: string): T { return document.querySelector<T>(`#${id}`)!; }
 
 async function initialize(): Promise<void> {
-  config = await invoke<AppConfig>("get_config");
+  [config, currentVersion] = await Promise.all([invoke<AppConfig>("get_config"), getVersion()]);
+  document.querySelector<HTMLElement>("#current-version")!.textContent = `v${currentVersion}`;
   bindConfig();
   await Promise.all([refreshCatalog(), refreshHookStatus(), refreshAutostart()]);
+}
+
+function showSettingsPage(page: SettingsPage, updateHash = true): void {
+  const copy = settingsPageCopy[page];
+  document.querySelector<HTMLElement>("#settings-page-eyebrow")!.textContent = copy.eyebrow;
+  document.querySelector<HTMLElement>("#settings-page-title")!.textContent = copy.title;
+  document.querySelector<HTMLElement>("#settings-page-description")!.textContent = copy.description;
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-settings-page]")) {
+    const active = button.dataset.settingsPage === page;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  }
+  for (const panel of document.querySelectorAll<HTMLElement>("[data-settings-panel]")) {
+    panel.hidden = panel.dataset.settingsPanel !== page;
+  }
+  if (updateHash && window.location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
+}
+
+async function checkForUpdates(): Promise<void> {
+  const button = document.querySelector<HTMLButtonElement>("#check-update")!;
+  const installButton = document.querySelector<HTMLButtonElement>("#install-update")!;
+  const card = document.querySelector<HTMLElement>("#update-status-card")!;
+  const icon = card.querySelector<HTMLElement>(".update-status-glyph")!;
+  const title = document.querySelector<HTMLElement>("#update-status-title")!;
+  const detail = document.querySelector<HTMLElement>("#update-status-detail")!;
+  const progressElement = document.querySelector<HTMLElement>("#update-progress")!;
+  const progressBar = document.querySelector<HTMLElement>("#update-progress-bar")!;
+  await closePendingUpdate();
+  button.disabled = true;
+  button.textContent = "正在检查…";
+  button.hidden = false;
+  installButton.hidden = true;
+  progressElement.hidden = true;
+  progressBar.style.width = "0%";
+  card.dataset.state = "checking";
+  icon.textContent = "\u21bb";
+  title.textContent = "正在检查更新";
+  detail.textContent = "正在安全地读取更新信息…";
+  let update: Update | null = null;
+  try {
+    update = await check();
+    if (!update) {
+      card.dataset.state = "current";
+      icon.textContent = "\u2713";
+      title.textContent = "已是最新版本";
+      detail.textContent = `当前版本 v${currentVersion}，暂无可用更新。`;
+      return;
+    }
+
+    card.dataset.state = "downloading";
+    icon.textContent = "\u2193";
+    title.textContent = `正在下载 v${update.version}`;
+    detail.textContent = "正在准备下载…";
+    button.hidden = true;
+    progressElement.hidden = false;
+    let progress = { ...emptyUpdateProgress };
+    await update.download((event) => {
+      progress = advanceUpdateProgress(progress, event);
+      const percent = updateProgressPercent(progress);
+      progressBar.style.width = `${percent ?? 0}%`;
+      detail.textContent = percent === null
+        ? `已下载 ${formatBytes(progress.downloaded)}`
+        : `已下载 ${percent}% · ${formatBytes(progress.downloaded)} / ${formatBytes(progress.total!)}`;
+    });
+
+    pendingUpdate = update;
+    card.dataset.state = "ready";
+    icon.textContent = "\u2713";
+    title.textContent = `v${update.version} 已准备好`;
+    detail.textContent = "更新包已下载并通过签名验证，可以安全安装。";
+    progressBar.style.width = "100%";
+    button.hidden = true;
+    installButton.hidden = false;
+  } catch (error) {
+    if (update && update !== pendingUpdate) await update.close().catch(() => undefined);
+    card.dataset.state = "error";
+    icon.textContent = "!";
+    title.textContent = "暂时无法检查更新";
+    detail.textContent = `${String(error)}。请检查网络后重试。`;
+    progressElement.hidden = true;
+    button.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "再次检查";
+  }
+}
+
+async function closePendingUpdate(): Promise<void> {
+  const update = pendingUpdate;
+  pendingUpdate = null;
+  if (update) await update.close().catch(() => undefined);
+}
+
+async function installPendingUpdate(): Promise<void> {
+  const update = pendingUpdate;
+  if (!update) return;
+  const button = document.querySelector<HTMLButtonElement>("#install-update")!;
+  const card = document.querySelector<HTMLElement>("#update-status-card")!;
+  const icon = card.querySelector<HTMLElement>(".update-status-glyph")!;
+  const title = document.querySelector<HTMLElement>("#update-status-title")!;
+  const detail = document.querySelector<HTMLElement>("#update-status-detail")!;
+  updateInstalling = true;
+  button.disabled = true;
+  button.textContent = "正在安装…";
+  card.dataset.state = "installing";
+  icon.textContent = "\u21bb";
+  title.textContent = `正在安装 v${update.version}`;
+  detail.textContent = "安装完成后 Agent Cat 会自动重启。";
+  let installed = false;
+  try {
+    await update.install();
+    installed = true;
+    pendingUpdate = null;
+    await relaunch();
+  } catch (error) {
+    card.dataset.state = "error";
+    icon.textContent = "!";
+    title.textContent = installed ? "更新已安装" : "更新安装失败";
+    detail.textContent = installed
+      ? "自动重启失败，请手动重新打开 Agent Cat。"
+      : `${String(error)}。下载内容仍然保留，可以重试安装。`;
+    button.disabled = installed;
+    button.textContent = installed ? "请手动重启" : "重试安装";
+  } finally {
+    updateInstalling = false;
+  }
 }
 
 function bindConfig(): void {
@@ -388,6 +531,15 @@ document.querySelector("#test-hook")!.addEventListener("click", async () => {
   }
 });
 document.querySelector("#open-debug")!.addEventListener("click", () => void invoke("show_window", { kind: "pet-debug" }));
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-settings-page]")) {
+  button.addEventListener("click", () => showSettingsPage(button.dataset.settingsPage as SettingsPage));
+}
+document.querySelector("#check-update")!.addEventListener("click", () => void checkForUpdates());
+document.querySelector("#install-update")!.addEventListener("click", () => void installPendingUpdate());
+window.addEventListener("hashchange", () => {
+  const page = window.location.hash.slice(1) as SettingsPage;
+  if (page in settingsPageCopy) showSettingsPage(page, false);
+});
 void listen<{ source?: string }>("agent-cat-config-changed", async ({ payload }) => {
   if (payload?.source === configEventSource) return;
   config = await invoke<AppConfig>("get_config");
@@ -399,5 +551,8 @@ window.addEventListener("beforeunload", () => {
   window.clearInterval(healthTimer);
   if (persistTimer !== null) window.clearTimeout(persistTimer);
   if (previewFrame !== null) window.cancelAnimationFrame(previewFrame);
+  if (!updateInstalling) void closePendingUpdate();
 });
+const initialPage = window.location.hash.slice(1) as SettingsPage;
+showSettingsPage(initialPage in settingsPageCopy ? initialPage : "general");
 void initialize().catch((error) => showMessage(String(error), true));
