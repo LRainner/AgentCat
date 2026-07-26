@@ -8,6 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "build:macos": "tauri build --bundles app",
     "build:windows": "tauri build --bundles nsis",
+    "build:ci:macos": "tauri build --bundles app --config src-tauri/tauri.ci.conf.json",
+    "build:ci:windows": "tauri build --bundles nsis --config src-tauri/tauri.ci.conf.json",
     "tauri": "tauri",
     "test": "vitest run",
     "test:e2e": "playwright test"
