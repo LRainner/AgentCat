@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/LRainner/AgentCat/compare/v1.2.2...v1.2.3) (2026-07-26)
+
+
+### Bug Fixes
+
+* **ci:** download draft release signatures via API ([#14](https://github.com/LRainner/AgentCat/issues/14)) ([e4a69ee](https://github.com/LRainner/AgentCat/commit/e4a69ee0a2f75ea1ff21e26932d9afe4a43e65fc))
+
 ## [1.2.2](https://github.com/LRainner/AgentCat/compare/v1.2.1...v1.2.2) (2026-07-26)
 
 
