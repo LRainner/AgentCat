@@ -84,7 +84,12 @@ fn https_proxy_from_scutil(output: &str) -> Option<String> {
     }
     let host = value("HTTPSProxy")?;
     let port = value("HTTPSPort")?.parse::<u16>().ok()?;
-    normalize_http_proxy(&format!("{host}:{port}"))
+    let endpoint = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    normalize_http_proxy(&endpoint)
 }
 
 #[cfg(test)]
@@ -146,6 +151,32 @@ mod tests {
         assert_eq!(
             https_proxy_from_scutil(output),
             Some("http://127.0.0.1:8443".into())
+        );
+    }
+
+    #[test]
+    fn brackets_a_bare_macos_ipv6_proxy_host() {
+        let output = r#"<dictionary> {
+  HTTPSEnable : 1
+  HTTPSPort : 8443
+  HTTPSProxy : 2001:db8::1
+}"#;
+        assert_eq!(
+            https_proxy_from_scutil(output),
+            Some("http://[2001:db8::1]:8443".into())
+        );
+    }
+
+    #[test]
+    fn preserves_a_bracketed_macos_ipv6_proxy_host() {
+        let output = r#"<dictionary> {
+  HTTPSEnable : 1
+  HTTPSPort : 8443
+  HTTPSProxy : [2001:db8::1]
+}"#;
+        assert_eq!(
+            https_proxy_from_scutil(output),
+            Some("http://[2001:db8::1]:8443".into())
         );
     }
 }
