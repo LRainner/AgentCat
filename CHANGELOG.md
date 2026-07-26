@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/LRainner/AgentCat/compare/v1.0.0...v1.1.0) (2026-07-26)
+
+
+### Features
+
+* add Windows support ([9811c71](https://github.com/LRainner/AgentCat/commit/9811c7157cf8714438d3879f4cb7aba3df4f98cd))
+
 ## [1.0.0](https://github.com/LRainner/AgentCat/compare/v0.3.3...v1.0.0) (2026-07-24)
 
 
