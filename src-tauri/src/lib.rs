@@ -5,6 +5,7 @@ mod hook_server;
 mod pet_catalog;
 mod pet_manifest;
 mod platform;
+mod updater_proxy;
 
 use base64::Engine;
 use config::{AppConfig, WindowConfig};
@@ -647,6 +648,7 @@ pub fn handle_cli() -> bool {
 }
 
 pub fn run() {
+    updater_proxy::configure();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
