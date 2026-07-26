@@ -21,6 +21,8 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      release_id: ${{ steps.release_metadata.outputs.id }}
+      release_sha: ${{ steps.release.outputs.sha }}
 
     steps:
       - name: Create or update the release pull request
@@ -32,6 +34,20 @@ jobs:
           config-file: .github/release-please/config.json
           manifest-file: .github/release-please/manifest.json
 
+      - name: Resolve created release ID
+        id: release_metadata
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          RELEASE_UPLOAD_URL: ${{ steps.release.outputs.upload_url }}
+        run: |
+          release_id="${RELEASE_UPLOAD_URL#*/releases/}"
+          release_id="${release_id%%/*}"
+          if [[ ! "${release_id}" =~ ^[0-9]+$ ]]; then
+            echo "Could not extract a release ID from ${RELEASE_UPLOAD_URL}" >&2
+            exit 1
+          fi
+          echo "id=${release_id}" >> "${GITHUB_OUTPUT}"
+
   build_macos_release:
     name: Build macOS release bundle
     needs: prepare_release
@@ -42,10 +58,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Check out release tag
+      - name: Check out release commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare_release.outputs.tag_name }}
+          ref: ${{ needs.prepare_release.outputs.release_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -73,8 +89,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ needs.prepare_release.outputs.tag_name }}
-          releaseDraft: false
+          # Keep tauri-action in upload-only mode so it cannot overwrite release metadata.
+          releaseId: ${{ needs.prepare_release.outputs.release_id }}
           tauriScript: npm run tauri
           uploadUpdaterJson: false
           args: --target universal-apple-darwin
@@ -89,10 +105,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Check out release tag
+      - name: Check out release commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare_release.outputs.tag_name }}
+          ref: ${{ needs.prepare_release.outputs.release_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -118,8 +134,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ needs.prepare_release.outputs.tag_name }}
-          releaseDraft: false
+          # Keep tauri-action in upload-only mode so it cannot overwrite release metadata.
+          releaseId: ${{ needs.prepare_release.outputs.release_id }}
           tauriScript: npm run tauri
           uploadUpdaterJson: false
           args: --bundles nsis
@@ -134,10 +150,10 @@ jobs:
       contents: write
 
     steps:
-      - name: Check out release tag
+      - name: Check out release commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare_release.outputs.tag_name }}
+          ref: ${{ needs.prepare_release.outputs.release_sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -146,6 +162,7 @@ jobs:
 
       - name: Generate combined updater manifest
         env:
+          GITHUB_RELEASE_ID: ${{ needs.prepare_release.outputs.release_id }}
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/generate-updater-manifest.mjs "${{ needs.prepare_release.outputs.tag_name }}" latest.json
@@ -153,4 +170,22 @@ jobs:
       - name: Upload updater manifest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ needs.prepare_release.outputs.tag_name }}" latest.json --clobber
+          RELEASE_ID: ${{ needs.prepare_release.outputs.release_id }}
+        run: |
+          existing_asset_id="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" \
+              --jq '.[] | select(.name == "latest.json") | .id'
+          )"
+          if [[ -n "${existing_asset_id}" ]]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${existing_asset_id}"
+          fi
+          gh api --method POST \
+            -H "Content-Type: application/json" \
+            --input latest.json \
+            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=latest.json"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.prepare_release.outputs.release_id }}
+        run: gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false
