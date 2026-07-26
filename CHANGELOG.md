@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/LRainner/AgentCat/compare/v1.2.1...v1.2.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* **ci:** publish complete releases atomically ([#12](https://github.com/LRainner/AgentCat/issues/12)) ([49be2b5](https://github.com/LRainner/AgentCat/commit/49be2b5338d9b462369e0a445ef755af1ca48b91))
+
 ## [1.2.1](https://github.com/LRainner/AgentCat/compare/v1.2.0...v1.2.1) (2026-07-26)
 
 
