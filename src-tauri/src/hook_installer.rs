@@ -19,6 +19,16 @@ const EVENTS: [&str; 10] = [
     "Stop",
 ];
 
+#[cfg(not(windows))]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+#[cfg(not(windows))]
+use unix as platform;
+#[cfg(windows)]
+use windows as platform;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HookStatus {
@@ -94,10 +104,17 @@ fn expected_command() -> Result<String, String> {
 }
 
 fn build_hook_command(executable: &Path) -> String {
-    format!(
-        "{} hook --agent codex >/dev/null 2>&1 || true",
-        shell_quote(&executable.to_string_lossy())
-    )
+    platform::build_hook_command(executable)
+}
+
+fn command_handler(command: &str) -> Value {
+    let mut handler = json!({
+        "type": "command",
+        "command": command,
+        "timeout": 2
+    });
+    platform::add_platform_fields(handler.as_object_mut().unwrap(), command);
+    handler
 }
 
 fn add_agent_cat_entries(root: &mut Value, command: &str) -> Result<(), String> {
@@ -120,13 +137,7 @@ fn add_agent_cat_entries(root: &mut Value, command: &str) -> Result<(), String> 
         let groups = event_groups
             .as_array_mut()
             .ok_or_else(|| format!("hooks.{event} 必须是数组；未覆盖原文件"))?;
-        groups.push(json!({
-            "hooks": [{
-                "type": "command",
-                "command": command,
-                "timeout": 2
-            }]
-        }));
+        groups.push(json!({ "hooks": [command_handler(command)] }));
     }
     Ok(())
 }
@@ -214,20 +225,26 @@ fn event_contains_command(root: &Value, event: &str, expected: &str) -> bool {
 }
 
 fn is_agent_cat_command(value: &Value) -> bool {
-    value
-        .get("command")
-        .and_then(Value::as_str)
-        .map(|command| command.contains("agent-cat") && command.contains("hook --agent codex"))
-        .unwrap_or(false)
+    ["command", "commandWindows"].into_iter().any(|field| {
+        value
+            .get(field)
+            .and_then(Value::as_str)
+            .is_some_and(is_agent_cat_command_text)
+    })
 }
 
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
+fn is_agent_cat_command_text(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    if lower.contains("agent-cat") && lower.contains("hook --agent codex") {
+        return true;
+    }
+    platform::is_encoded_agent_cat_command(command)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn marker_detection_is_narrow() {
         assert!(is_agent_cat_command(
@@ -236,17 +253,6 @@ mod tests {
         assert!(!is_agent_cat_command(
             &json!({"command": "other-tool hook --agent codex"})
         ));
-    }
-
-    #[test]
-    fn hook_command_never_surfaces_relay_failures_to_codex() {
-        let command = build_hook_command(Path::new(
-            "/Applications/Agent Cat.app/Contents/MacOS/agent-cat",
-        ));
-        assert_eq!(
-            command,
-            "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex >/dev/null 2>&1 || true"
-        );
     }
 
     #[test]

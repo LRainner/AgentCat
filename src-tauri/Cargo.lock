@@ -23,6 +23,8 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
+ "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

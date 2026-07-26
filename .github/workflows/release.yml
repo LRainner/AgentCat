@@ -32,8 +32,8 @@ jobs:
           config-file: .github/release-please/config.json
           manifest-file: .github/release-please/manifest.json
 
-  build_release:
-    name: Build release bundle
+  build_macos_release:
+    name: Build macOS release bundle
     needs: prepare_release
     if: needs.prepare_release.outputs.release_created == 'true'
     runs-on: macos-14
@@ -76,3 +76,46 @@ jobs:
           tauriScript: npm run tauri
           uploadUpdaterJson: false
           args: --target universal-apple-darwin
+
+  build_windows_release:
+    name: Build Windows release bundle
+    needs: prepare_release
+    if: needs.prepare_release.outputs.release_created == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare_release.outputs.tag_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload Windows installer
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tagName: ${{ needs.prepare_release.outputs.tag_name }}
+          releaseDraft: false
+          tauriScript: npm run tauri
+          uploadUpdaterJson: false
+          args: --bundles nsis

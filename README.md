@@ -12,9 +12,9 @@
   English · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex on macOS as the first supported integration.
+Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex integration on macOS and Windows.
 
-> **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and integrates with Codex. Support for more agents and operating systems is planned.
+> **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and Windows 10 or later, and integrates with Codex. Support for more agents and operating systems is planned.
 
 ## Download
 
@@ -22,12 +22,14 @@ Download the latest build from [GitHub Releases](https://github.com/LRainner/Age
 
 The current macOS build is not notarized with an Apple Developer ID. If macOS blocks the first launch, right-click Agent Cat and choose **Open**, or allow it from **System Settings → Privacy & Security**. Only install builds downloaded from this repository.
 
+The current Windows build is not code-signed. Windows SmartScreen may show a warning on first launch; only continue when the installer was downloaded from this repository.
+
 ## Highlights
 
 - Animated desktop pets with click, double-click, drag, idle, and pointer-following reactions
 - Real-time agent state displayed beside the pet without expanding its clickable area
 - Configurable size, opacity, always-on-top behavior, mouse passthrough, and position locking
-- Menu bar controls, launch at login, a settings window, and an animation debugger
+- System tray controls, launch at login, a settings window, and an animation debugger
 - Codex-compatible v1 and v2 pet packs, including all nine standard animations and 16 v2 look directions
 - Pet discovery from installed ChatGPT/Codex apps, `~/.codex/pets`, and user-selected directories
 - On-demand access to locally installed pet assets without copying or redistributing them
@@ -66,10 +68,11 @@ Place custom packs in `~/.codex/pets` or add another directory from Settings.
 
 ### Requirements
 
-- macOS 12 or later
+- macOS 12 or later, or Windows 10 or later
 - Node.js 20.19 or later
 - A stable Rust toolchain
-- Xcode Command Line Tools
+- Xcode Command Line Tools on macOS
+- Microsoft Edge WebView2 Runtime on Windows (the installer can download it when needed)
 
 ### Run locally
 
@@ -94,6 +97,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri -- build
 ```
 
+To build only the Windows NSIS installer, run `npm run build:windows` on Windows. On macOS, `npm run build:macos` builds the app bundle.
+
 ## Project structure
 
 ```text
@@ -105,7 +110,7 @@ src-tauri/    Rust backend, Tauri configuration, and platform icons
 
 ## Privacy
 
-Agent Cat processes Codex events locally. By default, its hook helper extracts the session ID, hook event name, and a sanitized tool name from the hook payload, sends the resulting event through a local Unix domain socket, and exits immediately.
+Agent Cat processes Codex events locally. By default, its hook helper extracts the session ID, hook event name, and a sanitized tool name from the hook payload, sends the resulting event through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately.
 
 When task summaries are enabled, Agent Cat keeps at most the first non-empty prompt line, truncated to 80 characters, in memory for live display. It does not store the summary in its configuration, logs, or history.
 
@@ -114,7 +119,7 @@ Agent Cat does not collect or persist full prompts, tool arguments, file content
 ## Roadmap
 
 - Additional AI agent adapters
-- Windows and Linux support
+- Linux support
 - A documented, agent-neutral event adapter interface
 - A standalone pet-pack specification and authoring workflow
 

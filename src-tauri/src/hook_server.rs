@@ -1,12 +1,7 @@
 use crate::config;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
     io::{Read, Write},
-    os::unix::{
-        fs::FileTypeExt,
-        net::{UnixListener, UnixStream},
-    },
     path::PathBuf,
     process::{Command, Stdio},
     sync::{
@@ -16,6 +11,16 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager};
+
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+#[cfg(unix)]
+use unix as transport;
+#[cfg(windows)]
+use windows as transport;
 
 const ALLOWED_EVENTS: [&str; 11] = [
     "SessionStart",
@@ -69,7 +74,7 @@ struct CodexInput {
 }
 
 pub fn socket_path() -> Result<PathBuf, String> {
-    Ok(config::config_dir()?.join("agent-cat.sock"))
+    Ok(config::config_dir()?.join(transport::ENDPOINT_NAME))
 }
 
 pub fn run_cli_hook() {
@@ -85,7 +90,7 @@ pub fn run_cli_hook() {
             .map(|value| value.codex.show_task_summary)
             .unwrap_or(false);
         let event = build_event(input, show_task_summary, now_ms())?;
-        let mut stream = UnixStream::connect(socket_path()?).map_err(|error| error.to_string())?;
+        let mut stream = transport::connect(&socket_path()?)?;
         stream
             .set_write_timeout(Some(Duration::from_millis(150)))
             .map_err(|error| error.to_string())?;
@@ -105,19 +110,10 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
     if let Some(parent) = socket.parent() {
         config::ensure_private_dir(parent)?;
     }
-    if socket.exists() {
-        if notify_existing_receiver(&socket) {
-            return Ok(false);
-        }
-        let metadata = fs::symlink_metadata(&socket)
-            .map_err(|error| format!("检查旧 socket 失败：{error}"))?;
-        if !metadata.file_type().is_socket() {
-            return Err(format!("{} 已存在且不是 Unix socket", socket.display()));
-        }
-        fs::remove_file(&socket).map_err(|error| format!("清理旧 socket 失败：{error}"))?;
+    if socket.exists() && notify_existing_receiver(&socket) {
+        return Ok(false);
     }
-    let listener = UnixListener::bind(&socket)
-        .map_err(|error| format!("绑定 {} 失败：{error}", socket.display()))?;
+    let listener = transport::bind(&socket)?;
     OWNS_SOCKET.store(true, Ordering::Release);
     RECEIVER_RUNNING.store(true, Ordering::Release);
     let spawn_result = std::thread::Builder::new()
@@ -158,17 +154,12 @@ fn cleanup_owned_socket() {
         return;
     }
     if let Ok(socket) = socket_path() {
-        let is_socket = fs::symlink_metadata(&socket)
-            .map(|metadata| metadata.file_type().is_socket())
-            .unwrap_or(false);
-        if is_socket {
-            let _ = fs::remove_file(socket);
-        }
+        transport::remove_owned_endpoint(&socket);
     }
 }
 
 fn notify_existing_receiver(socket: &std::path::Path) -> bool {
-    let Ok(mut stream) = UnixStream::connect(socket) else {
+    let Ok(mut stream) = transport::connect(socket) else {
         return false;
     };
     let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));

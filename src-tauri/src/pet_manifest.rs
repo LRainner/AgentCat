@@ -145,7 +145,7 @@ mod tests {
         let pet = load(&fixture("v2-pet"), "user-folder", "user-folder").unwrap();
         assert_eq!(pet.version, 2);
         assert_eq!((pet.width, pet.height), (1536, 2288));
-        assert!(pet.key.starts_with("user-folder:/"));
+        assert_eq!(pet.key, format!("user-folder:{}", pet.manifest_path));
     }
 
     #[test]

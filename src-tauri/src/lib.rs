@@ -4,6 +4,7 @@ mod hook_installer;
 mod hook_server;
 mod pet_catalog;
 mod pet_manifest;
+mod platform;
 
 use base64::Engine;
 use config::{AppConfig, WindowConfig};
@@ -438,11 +439,7 @@ fn reveal_path(path: String) -> Result<(), String> {
         fs::create_dir_all(&value)
             .map_err(|error| format!("创建 {} 失败：{error}", value.display()))?;
     }
-    std::process::Command::new("open")
-        .arg(value)
-        .spawn()
-        .map_err(|error| format!("无法在 Finder 中打开：{error}"))?;
-    Ok(())
+    platform::reveal_in_file_manager(&value)
 }
 
 #[tauri::command]
@@ -626,11 +623,27 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
 
 pub fn handle_cli() -> bool {
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) == Some("hook") {
-        hook_server::run_cli_hook();
-        return true;
+    match args.get(1).map(String::as_str) {
+        Some("hook") => {
+            hook_server::run_cli_hook();
+            true
+        }
+        Some("install-hooks") => {
+            if let Err(error) = hook_installer::install() {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+            true
+        }
+        Some("uninstall-hooks") => {
+            if let Err(error) = hook_installer::uninstall() {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+            true
+        }
+        _ => false,
     }
-    false
 }
 
 pub fn run() {
