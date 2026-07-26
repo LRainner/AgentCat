@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/LRainner/AgentCat/compare/v1.2.0...v1.2.1) (2026-07-26)
+
+
+### Bug Fixes
+
+* **updater:** honor native system proxy settings ([#10](https://github.com/LRainner/AgentCat/issues/10)) ([6992160](https://github.com/LRainner/AgentCat/commit/69921601d1d170e2e5430f42669b36c1b35b03c9))
+
 ## [1.2.0](https://github.com/LRainner/AgentCat/compare/v1.1.0...v1.2.0) (2026-07-26)
 
 
