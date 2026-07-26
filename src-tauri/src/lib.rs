@@ -479,7 +479,7 @@ fn probe_hook() -> Result<hook_server::HookRuntimeStatus, String> {
 
 fn show_aux_window(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     let (label, url, title, width, height) = match kind {
-        "settings" => ("settings", "settings.html", "Agent Cat 设置", 820.0, 760.0),
+        "settings" => ("settings", "settings.html", "Agent Cat 设置", 920.0, 720.0),
         "pet-debug" => (
             "pet-debug",
             "pet-debug.html",
@@ -648,6 +648,8 @@ pub fn handle_cli() -> bool {
 
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("Agent Cat")

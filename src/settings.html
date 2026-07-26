@@ -6,10 +6,20 @@
     <title>Agent Cat 设置</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body class="app-page">
+  <body class="app-page settings-page">
     <main class="settings-shell">
-      <header><div><p class="eyebrow">AGENT CAT</p><h1>设置</h1></div><button id="refresh-pets">刷新宠物</button></header>
-      <section><h2>宠物</h2><p id="catalog-summary" class="muted">正在扫描…</p><div id="pet-catalog"></div>
+      <aside class="settings-sidebar">
+        <div class="settings-brand"><img class="settings-brand-mark" alt="" /><div><p class="eyebrow">AGENT CAT</p><strong>设置</strong></div></div>
+        <nav class="settings-nav" aria-label="设置分类" role="tablist">
+          <button class="settings-nav-item active" type="button" data-settings-page="general" role="tab" aria-selected="true"><span class="settings-nav-icon" data-icon="settings" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg></span><span><strong>通用</strong><small>宠物、显示与行为</small></span></button>
+          <button class="settings-nav-item" type="button" data-settings-page="codex" role="tab" aria-selected="false"><span class="settings-nav-icon" data-icon="bot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg></span><span><strong>Codex</strong><small>连接与实时状态</small></span></button>
+          <button class="settings-nav-item" type="button" data-settings-page="about" role="tab" aria-selected="false"><span class="settings-nav-icon" data-icon="info" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span><span><strong>关于</strong><small>版本与软件更新</small></span></button>
+        </nav>
+      </aside>
+      <div class="settings-content">
+      <header class="settings-header"><div><p class="eyebrow" id="settings-page-eyebrow">PREFERENCES</p><h1 id="settings-page-title">通用</h1><p id="settings-page-description" class="muted">选择宠物并调整它在桌面上的表现。</p></div></header>
+      <div class="settings-panel" data-settings-panel="general" role="tabpanel">
+      <section><div class="section-heading"><div><h2>宠物</h2><p id="catalog-summary" class="muted">正在扫描…</p></div><button id="refresh-pets" class="secondary">刷新宠物</button></div><div id="pet-catalog"></div>
         <div class="inline-form"><input id="extra-directory" placeholder="/Users/me/Downloads/codex-pets" /><button id="add-directory">添加目录</button><button id="open-codex-pets" class="secondary">打开 ~/.codex/pets</button></div>
         <div id="extra-directories" class="directory-list"></div>
       </section>
@@ -31,7 +41,9 @@
         <label>响应半径 <input id="pointer-radius" type="range" min="100" max="1200" step="50" /><output id="pointer-radius-value"></output></label>
         <label>中心死区 <input id="pointer-deadzone" type="range" min="0" max="120" step="4" /><output id="pointer-deadzone-value"></output></label>
       </div></section>
-      <section><h2>Codex</h2>
+      </div>
+      <div class="settings-panel" data-settings-panel="codex" role="tabpanel" hidden>
+      <section><h2>Codex 连接</h2>
         <div id="codex-integration" class="integration-card" data-state="checking">
           <div class="integration-heading">
             <span class="integration-dot" aria-hidden="true"></span>
@@ -60,7 +72,28 @@
         <p class="privacy-note">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
         <div class="button-row"><button id="open-debug" class="secondary">动画测试器</button></div>
       </section>
+      </div>
+      <div class="settings-panel" data-settings-panel="about" role="tabpanel" hidden>
+        <section class="about-card">
+          <div class="about-identity"><img class="about-logo" alt="" /><div><h2>Agent Cat</h2><p class="muted">让 AI Agent 的工作状态变得直观而有趣。</p></div></div>
+          <div class="about-version"><span>当前版本</span><strong id="current-version">读取中…</strong></div>
+        </section>
+        <section>
+          <div class="section-heading"><div><h2>软件更新</h2><p class="muted">从 GitHub Releases 检查公开发布的新版本。</p></div></div>
+          <div id="update-status-card" class="update-status-card" data-state="idle" aria-live="polite">
+            <span class="update-status-icon" aria-hidden="true"><span class="update-status-glyph">↻</span></span>
+            <div class="update-status-copy">
+              <strong id="update-status-title">尚未检查更新</strong>
+              <p id="update-status-detail">检查到新版本后会在后台下载，并在签名验证通过后等待安装。</p>
+              <div id="update-progress" class="update-progress" hidden><span id="update-progress-bar"></span></div>
+            </div>
+            <div class="update-status-actions"><button id="check-update">检查更新</button><button id="install-update" hidden>安装并重启</button></div>
+          </div>
+        </section>
+        <section><h2>项目</h2><p class="about-copy">Agent Cat 是一个开源桌面伴侣。更新检查不会上传配置、提示词、文件内容或使用记录。</p><div class="about-meta"><span><small>支持平台</small><strong>macOS · Windows</strong></span><span><small>当前集成</small><strong>OpenAI Codex</strong></span></div></section>
+      </div>
       <div id="settings-message" role="status"></div>
+      </div>
     </main>
     <script type="module" src="/settings.ts"></script>
   </body>

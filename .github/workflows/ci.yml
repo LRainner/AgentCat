@@ -82,7 +82,7 @@ jobs:
         run: cargo test --all-targets --locked
 
       - name: Build macOS app bundle
-        run: npm run build:macos
+        run: npm run build:ci:macos
 
   windows:
     name: Rust and Windows app
@@ -128,4 +128,4 @@ jobs:
         run: cargo test --all-targets --locked
 
       - name: Build Windows installer
-        run: npm run build:windows
+        run: npm run build:ci:windows
