@@ -54,9 +54,7 @@ pub fn scan(app_config: &config::AppConfig) -> Result<CatalogResult, String> {
                 }));
             }
             Err(message) => diagnostics.push(CatalogDiagnostic {
-                path: bundle
-                    .path
-                    .join("Contents/Resources/app.asar")
+                path: codex_source::archive_path(bundle)
                     .to_string_lossy()
                     .to_string(),
                 source: "codex-builtin".into(),
@@ -143,6 +141,9 @@ fn expand_home(value: &str, home: &Path) -> PathBuf {
         return home.to_path_buf();
     }
     if let Some(rest) = value.strip_prefix("~/") {
+        return home.join(rest);
+    }
+    if let Some(rest) = value.strip_prefix("~\\") {
         return home.join(rest);
     }
     PathBuf::from(value)

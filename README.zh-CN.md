@@ -12,9 +12,9 @@
   <a href="README.md">English</a> · 简体中文
 </p>
 
-Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前首先实现了 macOS 上的 Codex 集成。
+Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前已实现 macOS 和 Windows 上的 Codex 集成。
 
-> **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统，并已集成 Codex；更多 Agent 和操作系统仍在规划中。
+> **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统和 Windows 10 及以上系统，并已集成 Codex；更多 Agent 和操作系统仍在规划中。
 
 ## 下载
 
@@ -22,12 +22,14 @@ Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变
 
 当前 macOS 版本没有使用 Apple Developer ID 进行公证。如果首次启动被 macOS 阻止，请右键点击 Agent Cat 并选择**打开**，或前往**系统设置 → 隐私与安全性**允许打开。请仅安装从本仓库下载的版本。
 
+当前 Windows 版本尚未进行代码签名，首次启动时 Windows SmartScreen 可能显示警告；请只运行从本仓库下载的安装包。
+
 ## 主要功能
 
 - 桌面宠物动画，支持单击、双击、拖动、空闲动作和跟随鼠标视线
 - 在宠物旁实时显示 Agent 状态，同时不扩大宠物的鼠标点击区域
 - 可调节宠物大小、透明度、始终置顶、鼠标穿透和位置锁定
-- 提供菜单栏控制、登录时启动、设置窗口和动画测试器
+- 提供系统托盘控制、登录时启动、设置窗口和动画测试器
 - 兼容 Codex v1/v2 宠物包，支持九种标准动画和 v2 的 16 个观察方向
 - 可从已安装的 ChatGPT/Codex App、`~/.codex/pets` 和用户指定目录发现宠物
 - 按需读取本机已有宠物资源，不复制或重新分发这些资源
@@ -66,10 +68,11 @@ Agent Cat 通过 command Hook 响应 Codex 会话。你可以在设置窗口中�
 
 ### 环境要求
 
-- macOS 12 或更高版本
+- macOS 12 或更高版本，或 Windows 10 及以上系统
 - Node.js 20.19 或更高版本
 - 稳定版 Rust 工具链
-- Xcode Command Line Tools
+- macOS 需要 Xcode Command Line Tools
+- Windows 需要 Microsoft Edge WebView2 Runtime（安装程序可按需下载）
 
 ### 运行
 
@@ -94,6 +97,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri -- build
 ```
 
+在 Windows 上只构建 NSIS 安装包可运行 `npm run build:windows`；在 macOS 上可用 `npm run build:macos` 构建 app bundle。
+
 ## 项目结构
 
 ```text
@@ -105,7 +110,7 @@ src-tauri/    Rust 后端、Tauri 配置和各平台图标
 
 ## 隐私
 
-Agent Cat 在本地处理 Codex 事件。默认情况下，Hook 辅助进程只从 Hook 载荷中提取会话 ID、Hook 事件名称和经过清理的工具名称，通过本地 Unix Domain Socket 发送处理后的事件并立即退出。
+Agent Cat 在本地处理 Codex 事件。默认情况下，Hook 辅助进程只从 Hook 载荷中提取会话 ID、Hook 事件名称和经过清理的工具名称；在 macOS 上通过本地 Unix Domain Socket、在 Windows 上通过仅监听回环地址的 TCP 连接发送处理后的事件，并立即退出。
 
 开启任务摘要后，Agent Cat 只在内存中保留用户提示的首个非空行，最多 80 个字符，用于实时展示。摘要不会写入配置、日志或历史记录。
 
@@ -114,7 +119,7 @@ Agent Cat 不收集或持久化完整提示词、工具参数、文件内容、t
 ## 规划
 
 - 适配更多 AI Agent
-- 支持 Windows 和 Linux
+- 支持 Linux
 - 提供有文档说明、与具体 Agent 无关的事件适配接口
 - 建立独立的宠物包规范和制作流程
 

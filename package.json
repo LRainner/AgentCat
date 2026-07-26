@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:macos": "tauri build --bundles app",
+    "build:windows": "tauri build --bundles nsis",
     "tauri": "tauri",
     "test": "vitest run"
   },

@@ -1,16 +1,19 @@
 use crate::pet_manifest::PetDescriptor;
 use image::ImageReader;
-use plist::Value as PlistValue;
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     fs,
     io::{Cursor, Read, Seek, SeekFrom},
     path::{Component, Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
 
-const CODEX_BUNDLE_ID: &str = "com.openai.codex";
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "windows")]
+mod windows;
+
 const ASAR_LOCATOR_PREFIX: &str = "asar:";
 const MAX_ASAR_HEADER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ASAR_ASSET_BYTES: u64 = 24 * 1024 * 1024;
@@ -42,39 +45,38 @@ struct AsarIndex {
 }
 
 pub fn installed_bundles(home: &Path) -> Vec<CodexBundle> {
-    let candidates = [
-        PathBuf::from("/Applications/ChatGPT.app"),
-        home.join("Applications/ChatGPT.app"),
-        PathBuf::from("/Applications/Codex.app"),
-        home.join("Applications/Codex.app"),
-    ];
-    let mut seen = HashSet::new();
-    candidates
-        .into_iter()
-        .filter_map(|path| {
-            let canonical = fs::canonicalize(&path).ok()?;
-            if !seen.insert(canonical.clone()) {
-                return None;
-            }
-            let info = read_bundle_info(&canonical)?;
-            (info.bundle_id == CODEX_BUNDLE_ID).then_some(CodexBundle {
-                path: canonical,
-                version: info.version,
-            })
-        })
-        .collect()
+    #[cfg(target_os = "macos")]
+    return macos::installed_bundles(home);
+    #[cfg(target_os = "windows")]
+    return windows::installed_bundles(home);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    Vec::new()
+}
+
+pub fn resources_dir(bundle: &CodexBundle) -> Option<PathBuf> {
+    let macos = bundle.path.join("Contents/Resources");
+    if macos.is_dir() {
+        return Some(macos);
+    }
+    let windows = bundle.path.join("resources");
+    windows.is_dir().then_some(windows)
+}
+
+pub fn archive_path(bundle: &CodexBundle) -> PathBuf {
+    resources_dir(bundle)
+        .unwrap_or_else(|| bundle.path.join("resources"))
+        .join("app.asar")
 }
 
 pub fn manifests(bundle: &CodexBundle) -> Vec<PathBuf> {
-    let resources = bundle.path.join("Contents/Resources");
-    if !resources.is_dir() {
+    let Some(resources) = resources_dir(bundle) else {
         return Vec::new();
-    }
+    };
     find_manifests(&resources, 9, 30_000)
 }
 
 pub fn builtin_pets(bundle: &CodexBundle) -> Result<BuiltinPetScan, String> {
-    let archive = bundle.path.join("Contents/Resources/app.asar");
+    let archive = archive_path(bundle);
     if !archive.is_file() {
         return Ok(BuiltinPetScan::default());
     }
@@ -401,26 +403,6 @@ fn builtin_display_name(id: &str) -> String {
     }
 }
 
-struct BundleInfo {
-    bundle_id: String,
-    version: Option<String>,
-}
-
-fn read_bundle_info(bundle: &Path) -> Option<BundleInfo> {
-    let value = PlistValue::from_file(bundle.join("Contents/Info.plist")).ok()?;
-    let dictionary = value.as_dictionary()?;
-    let bundle_id = dictionary
-        .get("CFBundleIdentifier")?
-        .as_string()?
-        .to_string();
-    let version = dictionary
-        .get("CFBundleShortVersionString")
-        .or_else(|| dictionary.get("CFBundleVersion"))
-        .and_then(PlistValue::as_string)
-        .map(str::to_string);
-    Some(BundleInfo { bundle_id, version })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,32 +442,5 @@ mod tests {
         assert!(
             parse_asar_locator("asar:/Applications/ChatGPT.app!/webview/assets/pet.webp").is_some()
         );
-    }
-
-    #[test]
-    fn scans_installed_chatgpt_bundle_when_available() {
-        let path = PathBuf::from("/Applications/ChatGPT.app");
-        if !path.is_dir() {
-            return;
-        }
-        let info = read_bundle_info(&path).expect("read ChatGPT Info.plist");
-        assert_eq!(info.bundle_id, CODEX_BUNDLE_ID);
-        let bundle = CodexBundle {
-            path,
-            version: info.version,
-        };
-        let scan = builtin_pets(&bundle).expect("scan ChatGPT app.asar");
-        assert!(scan.errors.is_empty(), "{:#?}", scan.errors);
-        assert!(scan.pets.len() >= 9, "found {} pets", scan.pets.len());
-        assert!(scan.pets.iter().any(|pet| pet.id == "codex"));
-        assert!(scan.pets.iter().any(|pet| pet.id == "null-signal"));
-        assert!(scan
-            .pets
-            .iter()
-            .all(|pet| pet.version == 2 && pet.width == 1536 && pet.height == 2288));
-        let bytes = read_asset_locator(&scan.pets[0].spritesheet_path)
-            .expect("ASAR locator")
-            .expect("read ASAR pet");
-        assert!(!bytes.is_empty());
     }
 }

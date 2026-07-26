@@ -1,12 +1,15 @@
+use crate::platform;
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -125,12 +128,25 @@ impl Default for AppConfig {
 }
 
 pub fn home_dir() -> Result<PathBuf, String> {
-    std::env::var_os("HOME")
+    #[cfg(windows)]
+    let value = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+    #[cfg(not(windows))]
+    let value = std::env::var_os("HOME");
+
+    value
         .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not available".to_string())
+        .ok_or_else(|| "无法确定用户主目录".to_string())
 }
 
 pub fn config_dir() -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .map(|path| path.join("io.github.agent-cat"))
+            .ok_or_else(|| "APPDATA is not available".to_string())
+    }
+    #[cfg(not(windows))]
     Ok(home_dir()?.join(".config/agent-cat"))
 }
 
@@ -162,6 +178,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         .parent()
         .ok_or_else(|| "目标路径没有父目录".to_string())?;
     ensure_private_dir(parent)?;
+    #[cfg(unix)]
     let target_mode = match fs::metadata(path) {
         Ok(metadata) => metadata.permissions().mode() & 0o7777,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0o600,
@@ -178,23 +195,27 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         std::process::id()
     ));
     let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options
             .open(&temp)
             .map_err(|error| format!("创建 {} 失败：{error}", temp.display()))?;
+        #[cfg(unix)]
         file.set_permissions(fs::Permissions::from_mode(target_mode))
             .map_err(|error| format!("设置 {} 权限失败：{error}", temp.display()))?;
         file.write_all(bytes)
             .map_err(|error| format!("写入 {} 失败：{error}", temp.display()))?;
         file.sync_all()
             .map_err(|error| format!("同步 {} 失败：{error}", temp.display()))?;
-        fs::rename(&temp, path)
+        platform::replace_file(&temp, path)
             .map_err(|error| format!("替换 {} 失败：{error}", path.display()))?;
+        #[cfg(unix)]
         fs::File::open(parent)
             .and_then(|directory| directory.sync_all())
-            .map_err(|error| format!("同步 {} 失败：{error}", parent.display()))
+            .map_err(|error| format!("同步 {} 失败：{error}", parent.display()))?;
+        Ok(())
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temp);
@@ -204,8 +225,10 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
 
 pub fn ensure_private_dir(path: &Path) -> Result<(), String> {
     fs::create_dir_all(path).map_err(|error| format!("创建 {} 失败：{error}", path.display()))?;
+    #[cfg(unix)]
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-        .map_err(|error| format!("设置 {} 权限失败：{error}", path.display()))
+        .map_err(|error| format!("设置 {} 权限失败：{error}", path.display()))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -235,6 +258,7 @@ mod tests {
         assert_eq!(codex.bubble_opacity, 0.92);
     }
 
+    #[cfg(unix)]
     #[test]
     fn atomic_write_uses_private_defaults_and_preserves_existing_mode() {
         let root = std::env::temp_dir().join(format!(
@@ -259,6 +283,21 @@ mod tests {
             fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o640
         );
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_write_replaces_existing_file_on_windows() {
+        let root = std::env::temp_dir().join(format!(
+            "agent-cat-atomic-write-{}-{}",
+            std::process::id(),
+            TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = root.join("config.json");
+        atomic_write(&path, b"first").unwrap();
+        atomic_write(&path, b"second").unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"second");
         fs::remove_dir_all(root).unwrap();
     }
