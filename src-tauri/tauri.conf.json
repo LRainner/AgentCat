@@ -67,7 +67,7 @@
         "silent": true
       },
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "both"
       }
     }
   }
