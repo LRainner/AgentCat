@@ -1,3 +1,8 @@
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "windows")]
+mod windows;
+
 pub fn configure() {
     if explicit_https_proxy_is_configured() {
         return;
@@ -43,6 +48,7 @@ fn normalize_http_proxy(endpoint: &str) -> Option<String> {
     })
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn https_proxy_from_windows_setting(setting: &str) -> Option<String> {
     let mut default_proxy = None;
     let mut https_proxy = None;
@@ -79,66 +85,6 @@ fn https_proxy_from_scutil(output: &str) -> Option<String> {
     let host = value("HTTPSProxy")?;
     let port = value("HTTPSPort")?.parse::<u16>().ok()?;
     normalize_http_proxy(&format!("{host}:{port}"))
-}
-
-#[cfg(target_os = "windows")]
-mod windows {
-    use super::https_proxy_from_windows_setting;
-    use windows_sys::Win32::{
-        Foundation::GlobalFree,
-        Networking::WinHttp::{
-            WinHttpGetIEProxyConfigForCurrentUser, WINHTTP_CURRENT_USER_IE_PROXY_CONFIG,
-        },
-    };
-
-    pub(super) fn current_user_https_proxy() -> Option<String> {
-        let mut config = WINHTTP_CURRENT_USER_IE_PROXY_CONFIG::default();
-        if unsafe { WinHttpGetIEProxyConfigForCurrentUser(&mut config) } == 0 {
-            return None;
-        }
-
-        let proxy = unsafe { wide_string(config.lpszProxy) };
-        unsafe {
-            free_global_string(config.lpszAutoConfigUrl);
-            free_global_string(config.lpszProxy);
-            free_global_string(config.lpszProxyBypass);
-        }
-        proxy.and_then(|value| https_proxy_from_windows_setting(&value))
-    }
-
-    unsafe fn wide_string(value: *mut u16) -> Option<String> {
-        if value.is_null() {
-            return None;
-        }
-        let mut len = 0;
-        while unsafe { *value.add(len) } != 0 {
-            len += 1;
-        }
-        String::from_utf16(unsafe { std::slice::from_raw_parts(value, len) }).ok()
-    }
-
-    unsafe fn free_global_string(value: *mut u16) {
-        if !value.is_null() {
-            let _ = unsafe { GlobalFree(value.cast()) };
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-mod macos {
-    use super::https_proxy_from_scutil;
-    use std::process::Command;
-
-    pub(super) fn current_user_https_proxy() -> Option<String> {
-        let output = Command::new("/usr/sbin/scutil")
-            .arg("--proxy")
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        https_proxy_from_scutil(&String::from_utf8_lossy(&output.stdout))
-    }
 }
 
 #[cfg(test)]
