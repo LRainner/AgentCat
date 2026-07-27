@@ -23,26 +23,39 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 #pet-error { position: absolute; left: 6px; right: 6px; bottom: 3px; overflow: hidden; color: #8e3030; font-size: 9px; line-height: 1.1; text-align: center; text-shadow: 0 1px white; }
 
 .status-window, .status-window .status-page, .status-window #live-status { background: transparent; background-color: transparent; }
-.status-page { margin: 0; width: 100vw; height: 100vh; overflow: hidden; pointer-events: none; user-select: none; }
-#live-status { width: 400px; height: 96px; padding: 8px 10px 12px; zoom: var(--bubble-scale, 1); }
+.status-page { margin: 0; width: 100vw; height: 100vh; overflow: hidden; user-select: none; }
+#live-status { position: absolute; bottom: 0; left: 0; width: 400px; height: var(--content-height, 96px); padding: 8px 10px 12px; outline: none; cursor: pointer; zoom: var(--bubble-scale, 1); }
 .status-card {
+  position: absolute;
+  right: 10px;
+  bottom: 12px;
+  left: 10px;
+  height: 72px;
+  transform: translateY(var(--stack-collapsed-y, 0)) scale(var(--stack-scale, 1));
+  transform-origin: bottom center;
+  transition: transform 320ms cubic-bezier(.22, 1, .36, 1), filter 220ms ease;
+  pointer-events: none;
+}
+#live-status[data-expanded="true"] .status-card { transform: translateY(var(--stack-expanded-y, 0)) scale(1); }
+.status-card-surface {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
   width: 100%;
-  min-height: 72px;
+  height: 72px;
   padding: 14px 18px 14px 20px;
   border: 1px solid rgb(72 84 88 / 18%);
   border-radius: 22px;
   color: #202628;
   background: rgb(247 248 246 / var(--bubble-opacity, .92));
   box-shadow: 0 4px 10px #263b4218, inset 0 1px 0 #ffffffd9;
+  animation: status-card-in 260ms cubic-bezier(.22, 1, .36, 1) both;
 }
 .status-copy { min-width: 0; flex: 1; }
-#status-title, #status-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#status-title { font-size: 16px; line-height: 1.25; font-weight: 720; letter-spacing: -.015em; }
-#status-detail { margin-top: 4px; color: #697174; font-size: 13px; line-height: 1.2; font-weight: 480; }
+.status-title, .status-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-title { font-size: 16px; line-height: 1.25; font-weight: 720; letter-spacing: -.015em; }
+.status-detail { margin-top: 4px; color: #697174; font-size: 13px; line-height: 1.2; font-weight: 480; }
 .status-indicator {
   position: relative;
   flex: 0 0 34px;
@@ -53,16 +66,17 @@ button.compact { padding: 6px 10px; font-size: 12px; }
   border-radius: 50%;
   animation: status-spin 1s linear infinite;
 }
-#live-status[data-phase="waiting"] .status-indicator { border: 0; background: #f0b24f; animation: status-pulse 1.25s ease-in-out infinite; }
-#live-status[data-phase="waiting"] .status-indicator::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: white; }
-#live-status[data-phase="done"] .status-indicator,
-#live-status[data-phase="error"] .status-indicator { display: grid; place-items: center; border: 0; color: white; animation: none; font-size: 20px; font-weight: 800; }
-#live-status[data-phase="done"] .status-indicator { background: #55a37a; }
-#live-status[data-phase="done"] .status-indicator::after { content: "✓"; transform: translateY(-1px); }
-#live-status[data-phase="error"] .status-indicator { background: #bd5c55; }
-#live-status[data-phase="error"] .status-indicator::after { content: "!"; }
+.status-card[data-phase="waiting"] .status-indicator { border: 0; background: #f0b24f; animation: status-pulse 1.25s ease-in-out infinite; }
+.status-card[data-phase="waiting"] .status-indicator::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: white; }
+.status-card[data-phase="done"] .status-indicator,
+.status-card[data-phase="error"] .status-indicator { display: grid; place-items: center; border: 0; color: white; animation: none; font-size: 20px; font-weight: 800; }
+.status-card[data-phase="done"] .status-indicator { background: #55a37a; }
+.status-card[data-phase="done"] .status-indicator::after { content: "✓"; transform: translateY(-1px); }
+.status-card[data-phase="error"] .status-indicator { background: #bd5c55; }
+.status-card[data-phase="error"] .status-indicator::after { content: "!"; }
 @keyframes status-spin { to { transform: rotate(360deg); } }
 @keyframes status-pulse { 0%, 100% { transform: scale(.86); opacity: .72; } 50% { transform: scale(1); opacity: 1; } }
+@keyframes status-card-in { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
 
 /* Original fallback matching the B app icon; independent of Codex artwork. */
 #fallback-cat { position: absolute; inset: 0; display: grid; place-items: center; transform-origin: 50% 78%; animation: fallback-breathe 2.2s ease-in-out infinite; }

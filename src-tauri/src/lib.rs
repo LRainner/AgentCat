@@ -14,6 +14,7 @@ use serde::Serialize;
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -45,6 +46,8 @@ struct TrayMenuState {
     lock_position: CheckMenuItem<tauri::Wry>,
     launch_at_login: CheckMenuItem<tauri::Wry>,
 }
+
+struct StatusWindowState(Mutex<f64>);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,13 +183,13 @@ fn start_dragging(app: tauri::AppHandle) -> Result<(), String> {
 fn apply_window_settings(app: tauri::AppHandle, value: WindowConfig) -> Result<(), String> {
     apply_main_window_settings(&app, &value)?;
     let app_config = config::load()?;
-    sync_status_window_with_config(&app, &app_config)
+    sync_status_window_with_config(&app, &app_config, None)
 }
 
 #[tauri::command]
 fn apply_config_preview(app: tauri::AppHandle, value: AppConfig) -> Result<(), String> {
     apply_main_window_settings(&app, &value.window)?;
-    sync_status_window_with_config(&app, &value)
+    sync_status_window_with_config(&app, &value, None)
 }
 
 fn apply_main_window_settings(app: &tauri::AppHandle, value: &WindowConfig) -> Result<(), String> {
@@ -219,12 +222,16 @@ fn capture_main_position(app: &tauri::AppHandle, value: &mut WindowConfig) -> Re
 }
 
 #[tauri::command]
-fn sync_status_window(app: tauri::AppHandle) -> Result<(), String> {
+fn sync_status_window(app: tauri::AppHandle, content_height: Option<f64>) -> Result<(), String> {
     let value = config::load()?;
-    sync_status_window_with_config(&app, &value)
+    sync_status_window_with_config(&app, &value, content_height)
 }
 
-fn sync_status_window_with_config(app: &tauri::AppHandle, value: &AppConfig) -> Result<(), String> {
+fn sync_status_window_with_config(
+    app: &tauri::AppHandle,
+    value: &AppConfig,
+    content_height: Option<f64>,
+) -> Result<(), String> {
     let status = app
         .get_webview_window("status")
         .ok_or_else(|| "状态窗口不存在".to_string())?;
@@ -232,14 +239,21 @@ fn sync_status_window_with_config(app: &tauri::AppHandle, value: &AppConfig) -> 
         .set_always_on_top(value.window.always_on_top)
         .map_err(|error| error.to_string())?;
     status
-        .set_ignore_cursor_events(true)
+        .set_ignore_cursor_events(false)
         .map_err(|error| error.to_string())?;
     let bubble_scale = value.codex.bubble_scale.clamp(0.65, 1.5);
+    let state = app.state::<StatusWindowState>();
+    let mut content_height_state = state.0.lock().map_err(|error| error.to_string())?;
+    if let Some(requested) = content_height.filter(|height| height.is_finite()) {
+        *content_height_state = requested.clamp(96.0, 4096.0);
+    }
+    let content_height = *content_height_state;
+    let logical_status_size =
+        tauri::LogicalSize::new(400.0 * bubble_scale, content_height * bubble_scale);
+    let status_size = logical_status_size
+        .to_physical::<u32>(status.scale_factor().map_err(|error| error.to_string())?);
     status
-        .set_size(tauri::LogicalSize::new(
-            400.0 * bubble_scale,
-            96.0 * bubble_scale,
-        ))
+        .set_size(logical_status_size)
         .map_err(|error| error.to_string())?;
     if !value.codex.hooks_enabled || !value.codex.show_live_status {
         status.hide().map_err(|error| error.to_string())?;
@@ -251,7 +265,6 @@ fn sync_status_window_with_config(app: &tauri::AppHandle, value: &AppConfig) -> 
         .ok_or_else(|| "宠物窗口不存在".to_string())?;
     let main_position = main.outer_position().map_err(|error| error.to_string())?;
     let main_size = main.outer_size().map_err(|error| error.to_string())?;
-    let status_size = status.outer_size().map_err(|error| error.to_string())?;
     let monitor = main
         .current_monitor()
         .map_err(|error| error.to_string())?
@@ -273,7 +286,9 @@ fn sync_status_window_with_config(app: &tauri::AppHandle, value: &AppConfig) -> 
     let y = desired_y.clamp(min_y, max_y.max(min_y));
     status
         .set_position(PhysicalPosition::new(x, y))
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    drop(content_height_state);
+    Ok(())
 }
 
 fn sync_tray_menu(app: &tauri::AppHandle, value: &WindowConfig) {
@@ -650,6 +665,7 @@ pub fn handle_cli() -> bool {
 pub fn run() {
     updater_proxy::configure();
     let app = tauri::Builder::default()
+        .manage(StatusWindowState(Mutex::new(96.0)))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
@@ -703,7 +719,7 @@ pub fn run() {
                         }
                     }
                 }
-                let _ = sync_status_window(app.handle().clone());
+                let _ = sync_status_window(app.handle().clone(), None);
             }
             let args: Vec<String> = std::env::args().collect();
             if args.iter().any(|arg| arg == "--settings") {

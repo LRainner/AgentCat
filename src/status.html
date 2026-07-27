@@ -7,15 +7,7 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="status-page">
-    <main id="live-status" data-phase="thinking" aria-live="polite" hidden>
-      <div class="status-card">
-        <div class="status-copy">
-          <div id="status-title"></div>
-          <div id="status-detail"></div>
-        </div>
-        <span class="status-indicator" aria-hidden="true"></span>
-      </div>
-    </main>
+    <main id="live-status" role="button" aria-live="polite" aria-label="Codex 会话状态" aria-expanded="false" tabindex="0" hidden></main>
     <script type="module" src="/status.ts"></script>
   </body>
 </html>
