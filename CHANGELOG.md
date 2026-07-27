@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/LRainner/AgentCat/compare/v1.2.5...v1.3.0) (2026-07-27)
+
+
+### Features
+
+* **status:** stack concurrent session status bubbles ([#20](https://github.com/LRainner/AgentCat/issues/20)) ([e1a888b](https://github.com/LRainner/AgentCat/commit/e1a888b131d6a66d998406f27c59c33083f7674d))
+
+
+### Bug Fixes
+
+* **windows:** avoid deadlock when opening windows ([#22](https://github.com/LRainner/AgentCat/issues/22)) ([f1d753c](https://github.com/LRainner/AgentCat/commit/f1d753c27a42bd2ea73509819d9481c0a485e3a7))
+
 ## [1.2.5](https://github.com/LRainner/AgentCat/compare/v1.2.4...v1.2.5) (2026-07-27)
 
 
