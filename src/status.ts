@@ -5,7 +5,9 @@ import { LiveStatusController } from "./live-status";
 import type { AgentEvent, AgentLiveStatus, AppConfig } from "./types";
 
 const statusWindow = getCurrentWindow();
-const root = document.querySelector<HTMLElement>("#live-status")!;
+const shell = document.querySelector<HTMLElement>("#status-shell")!;
+const stack = document.querySelector<HTMLElement>("#status-stack")!;
+const toggle = document.querySelector<HTMLButtonElement>("#status-toggle")!;
 let config: AppConfig;
 let lastEventKey = "";
 let expanded = false;
@@ -23,14 +25,14 @@ function contentHeight(count: number): number {
 async function render(statuses: AgentLiveStatus[]): Promise<void> {
   if (!statuses.length || !config?.codex.hooksEnabled || !config.codex.showLiveStatus) {
     expanded = false;
-    root.hidden = true;
+    shell.hidden = true;
     await statusWindow.hide();
     return;
   }
 
   if (statuses.length === 1) expanded = false;
   const existingCards = new Map(
-    [...root.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionId ?? "", card]),
+    [...stack.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionId ?? "", card]),
   );
   const activeIds = new Set(statuses.map(({ sessionId }) => sessionId));
   for (const [sessionId, card] of existingCards) {
@@ -43,6 +45,7 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
       card = document.createElement("article");
       card.className = "status-card";
       card.dataset.sessionId = status.sessionId;
+      card.setAttribute("role", "listitem");
       card.innerHTML = `
         <div class="status-card-surface">
           <div class="status-copy">
@@ -51,7 +54,7 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
           </div>
           <span class="status-indicator" aria-hidden="true"></span>
         </div>`;
-      root.append(card);
+      stack.append(card);
     }
     card.dataset.phase = status.phase;
     card.style.setProperty("--stack-collapsed-y", `${-index * COLLAPSED_OFFSET}px`);
@@ -62,20 +65,22 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
     card.querySelector<HTMLElement>(".status-detail")!.textContent = status.detail;
   });
 
-  root.dataset.expanded = String(expanded);
-  root.setAttribute("aria-expanded", String(expanded));
-  root.setAttribute("aria-label", statuses.length > 1
-    ? `${statuses.length} 个 Codex 会话，点击${expanded ? "收起" : "展开"}`
-    : "1 个 Codex 会话");
+  shell.dataset.expanded = String(expanded);
+  toggle.hidden = statuses.length < 2;
+  toggle.setAttribute("aria-expanded", String(expanded));
+  toggle.setAttribute("aria-label", `${statuses.length} 个 Codex 会话，点击${expanded ? "收起" : "展开"}`);
   const height = contentHeight(statuses.length);
-  root.style.setProperty("--content-height", `${height}px`);
-  root.hidden = false;
+  shell.style.setProperty("--content-height", `${height}px`);
+  shell.hidden = false;
   await invoke("sync_status_window", { contentHeight: height });
   await statusWindow.show();
 }
 
-function queueRender(statuses = controller.getStatuses()): void {
-  renderQueue = renderQueue.then(() => render(statuses)).catch(() => undefined);
+function queueRender(statuses = controller.getStatuses()): Promise<void> {
+  renderQueue = renderQueue.then(() => render(statuses)).catch((error: unknown) => {
+    console.error("Failed to render live status", error);
+  });
+  return renderQueue;
 }
 
 const controller = new LiveStatusController((statuses) => queueRender(statuses));
@@ -90,12 +95,12 @@ function acceptEvent(payload: AgentEvent): void {
 async function loadConfig(): Promise<void> {
   config = await invoke<AppConfig>("get_config");
   applyConfigStyles();
-  await render(controller.getStatuses());
+  await queueRender();
 }
 
 function applyConfigStyles(): void {
-  root.style.setProperty("--bubble-scale", String(Math.min(1.5, Math.max(0.65, config.codex.bubbleScale))));
-  root.style.setProperty("--bubble-opacity", String(Math.min(1, Math.max(0.2, config.codex.bubbleOpacity))));
+  shell.style.setProperty("--bubble-scale", String(Math.min(1.5, Math.max(0.65, config.codex.bubbleScale))));
+  shell.style.setProperty("--bubble-opacity", String(Math.min(1, Math.max(0.2, config.codex.bubbleOpacity))));
 }
 
 void listen<AgentEvent>("codex-event", ({ payload }) => {
@@ -108,15 +113,10 @@ void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
 });
 void listen("agent-cat-config-changed", () => void loadConfig());
 window.addEventListener("beforeunload", () => controller.dispose());
-root.addEventListener("click", () => {
+toggle.addEventListener("click", () => {
   if (controller.getStatuses().length < 2) return;
   expanded = !expanded;
   queueRender();
-});
-root.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  root.click();
 });
 void loadConfig();
 window.setInterval(async () => {

@@ -22,9 +22,14 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 .pet-sprite, #fallback-cat { opacity: var(--pet-opacity, 1); }
 #pet-error { position: absolute; left: 6px; right: 6px; bottom: 3px; overflow: hidden; color: #8e3030; font-size: 9px; line-height: 1.1; text-align: center; text-shadow: 0 1px white; }
 
-.status-window, .status-window .status-page, .status-window #live-status { background: transparent; background-color: transparent; }
+.status-window, .status-window .status-page, .status-window #status-shell, .status-window #live-status { background: transparent; background-color: transparent; }
 .status-page { margin: 0; width: 100vw; height: 100vh; overflow: hidden; user-select: none; }
-#live-status { position: absolute; bottom: 0; left: 0; width: 400px; height: var(--content-height, 96px); padding: 8px 10px 12px; outline: none; cursor: pointer; zoom: var(--bubble-scale, 1); }
+#status-shell { position: absolute; bottom: 0; left: 0; width: 400px; height: var(--content-height, 96px); zoom: var(--bubble-scale, 1); }
+#live-status { position: absolute; inset: 0; padding: 8px 10px 12px; }
+#status-stack { position: absolute; inset: 0; }
+#status-toggle { position: absolute; inset: 0; z-index: 1000; padding: 0; border: 0; border-radius: 22px; outline: none; background: transparent; cursor: pointer; transition: none; }
+#status-toggle:hover { filter: none; transform: none; }
+#status-toggle:focus-visible { outline: 2px solid #4a90d9; outline-offset: -3px; }
 .status-card {
   position: absolute;
   right: 10px;
@@ -36,7 +41,7 @@ button.compact { padding: 6px 10px; font-size: 12px; }
   transition: transform 320ms cubic-bezier(.22, 1, .36, 1), filter 220ms ease;
   pointer-events: none;
 }
-#live-status[data-expanded="true"] .status-card { transform: translateY(var(--stack-expanded-y, 0)) scale(1); }
+#status-shell[data-expanded="true"] .status-card { transform: translateY(var(--stack-expanded-y, 0)) scale(1); }
 .status-card-surface {
   display: flex;
   align-items: center;

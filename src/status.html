@@ -7,7 +7,12 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="status-page">
-    <main id="live-status" role="button" aria-live="polite" aria-label="Codex 会话状态" aria-expanded="false" tabindex="0" hidden></main>
+    <div id="status-shell" hidden>
+      <main id="live-status" aria-live="polite" aria-label="Codex 会话状态">
+        <div id="status-stack" role="list"></div>
+      </main>
+      <button id="status-toggle" type="button" aria-controls="status-stack" aria-expanded="false" hidden></button>
+    </div>
     <script type="module" src="/status.ts"></script>
   </body>
 </html>
