@@ -40,15 +40,17 @@ async function signatureFor(asset) {
 const macos = requireAsset((name) => name.endsWith(".app.tar.gz"), "macOS updater archive");
 const windows = requireAsset((name) => name.endsWith("-setup.exe"), "Windows NSIS updater installer");
 const [macosSignature, windowsSignature] = await Promise.all([signatureFor(macos), signatureFor(windows)]);
+const downloadUrl = (asset) =>
+  `https://github.com/${repository}/releases/download/${encodeURIComponent(release.tag_name)}/${encodeURIComponent(asset.name)}`;
 
 const manifest = {
   version: tag.replace(/^v/i, ""),
   notes: release.body ?? "",
   pub_date: release.published_at ?? new Date().toISOString(),
   platforms: {
-    "darwin-aarch64": { signature: macosSignature, url: macos.browser_download_url },
-    "darwin-x86_64": { signature: macosSignature, url: macos.browser_download_url },
-    "windows-x86_64": { signature: windowsSignature, url: windows.browser_download_url },
+    "darwin-aarch64": { signature: macosSignature, url: downloadUrl(macos) },
+    "darwin-x86_64": { signature: macosSignature, url: downloadUrl(macos) },
+    "windows-x86_64": { signature: windowsSignature, url: downloadUrl(windows) },
   },
 };
 
