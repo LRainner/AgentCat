@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/LRainner/AgentCat/compare/v1.2.4...v1.2.5) (2026-07-27)
+
+
+### Bug Fixes
+
+* **status:** refine bubble contrast and shadow ([#18](https://github.com/LRainner/AgentCat/issues/18)) ([22fa80e](https://github.com/LRainner/AgentCat/commit/22fa80e4d028ff66f07ad6ebf259db969e59423b))
+
 ## [1.2.4](https://github.com/LRainner/AgentCat/compare/v1.2.3...v1.2.4) (2026-07-27)
 
 
