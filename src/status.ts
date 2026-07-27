@@ -5,27 +5,85 @@ import { LiveStatusController } from "./live-status";
 import type { AgentEvent, AgentLiveStatus, AppConfig } from "./types";
 
 const statusWindow = getCurrentWindow();
-const root = document.querySelector<HTMLElement>("#live-status")!;
-const title = document.querySelector<HTMLElement>("#status-title")!;
-const detail = document.querySelector<HTMLElement>("#status-detail")!;
+const shell = document.querySelector<HTMLElement>("#status-shell")!;
+const stack = document.querySelector<HTMLElement>("#status-stack")!;
+const toggle = document.querySelector<HTMLButtonElement>("#status-toggle")!;
 let config: AppConfig;
 let lastEventKey = "";
+let expanded = false;
+let renderQueue = Promise.resolve();
 
-async function render(status: AgentLiveStatus | null): Promise<void> {
-  if (!status || !config?.codex.hooksEnabled || !config.codex.showLiveStatus) {
-    root.hidden = true;
+const COLLAPSED_HEIGHT = 96;
+const COLLAPSED_OFFSET = 8;
+const EXPANDED_OFFSET = 80;
+
+function contentHeight(count: number): number {
+  if (count <= 1) return COLLAPSED_HEIGHT;
+  return COLLAPSED_HEIGHT + (count - 1) * (expanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET);
+}
+
+async function render(statuses: AgentLiveStatus[]): Promise<void> {
+  if (!statuses.length || !config?.codex.hooksEnabled || !config.codex.showLiveStatus) {
+    expanded = false;
+    shell.hidden = true;
     await statusWindow.hide();
     return;
   }
-  title.textContent = config.codex.showTaskSummary ? status.title : "Codex";
-  detail.textContent = status.detail;
-  root.dataset.phase = status.phase;
-  root.hidden = false;
-  await invoke("sync_status_window");
+
+  if (statuses.length === 1) expanded = false;
+  const existingCards = new Map(
+    [...stack.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionId ?? "", card]),
+  );
+  const activeIds = new Set(statuses.map(({ sessionId }) => sessionId));
+  for (const [sessionId, card] of existingCards) {
+    if (!activeIds.has(sessionId)) card.remove();
+  }
+
+  statuses.forEach((status, index) => {
+    let card = existingCards.get(status.sessionId);
+    if (!card) {
+      card = document.createElement("article");
+      card.className = "status-card";
+      card.dataset.sessionId = status.sessionId;
+      card.setAttribute("role", "listitem");
+      card.innerHTML = `
+        <div class="status-card-surface">
+          <div class="status-copy">
+            <div class="status-title"></div>
+            <div class="status-detail"></div>
+          </div>
+          <span class="status-indicator" aria-hidden="true"></span>
+        </div>`;
+      stack.append(card);
+    }
+    card.dataset.phase = status.phase;
+    card.style.setProperty("--stack-collapsed-y", `${-index * COLLAPSED_OFFSET}px`);
+    card.style.setProperty("--stack-expanded-y", `${-index * EXPANDED_OFFSET}px`);
+    card.style.setProperty("--stack-scale", String(Math.max(0.94, 1 - index * 0.012)));
+    card.style.zIndex = String(statuses.length - index);
+    card.querySelector<HTMLElement>(".status-title")!.textContent = config.codex.showTaskSummary ? status.title : "Codex";
+    card.querySelector<HTMLElement>(".status-detail")!.textContent = status.detail;
+  });
+
+  shell.dataset.expanded = String(expanded);
+  toggle.hidden = statuses.length < 2;
+  toggle.setAttribute("aria-expanded", String(expanded));
+  toggle.setAttribute("aria-label", `${statuses.length} 个 Codex 会话，点击${expanded ? "收起" : "展开"}`);
+  const height = contentHeight(statuses.length);
+  shell.style.setProperty("--content-height", `${height}px`);
+  shell.hidden = false;
+  await invoke("sync_status_window", { contentHeight: height });
   await statusWindow.show();
 }
 
-const controller = new LiveStatusController((status) => { void render(status); });
+function queueRender(statuses = controller.getStatuses()): Promise<void> {
+  renderQueue = renderQueue.then(() => render(statuses)).catch((error: unknown) => {
+    console.error("Failed to render live status", error);
+  });
+  return renderQueue;
+}
+
+const controller = new LiveStatusController((statuses) => queueRender(statuses));
 
 function acceptEvent(payload: AgentEvent): void {
   const key = [payload.sessionId, payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? ""].join(":");
@@ -37,12 +95,12 @@ function acceptEvent(payload: AgentEvent): void {
 async function loadConfig(): Promise<void> {
   config = await invoke<AppConfig>("get_config");
   applyConfigStyles();
-  await render(controller.getCurrent());
+  await queueRender();
 }
 
 function applyConfigStyles(): void {
-  root.style.setProperty("--bubble-scale", String(Math.min(1.5, Math.max(0.65, config.codex.bubbleScale))));
-  root.style.setProperty("--bubble-opacity", String(Math.min(1, Math.max(0.2, config.codex.bubbleOpacity))));
+  shell.style.setProperty("--bubble-scale", String(Math.min(1.5, Math.max(0.65, config.codex.bubbleScale))));
+  shell.style.setProperty("--bubble-opacity", String(Math.min(1, Math.max(0.2, config.codex.bubbleOpacity))));
 }
 
 void listen<AgentEvent>("codex-event", ({ payload }) => {
@@ -51,9 +109,15 @@ void listen<AgentEvent>("codex-event", ({ payload }) => {
 void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
   config = payload;
   applyConfigStyles();
+  queueRender();
 });
 void listen("agent-cat-config-changed", () => void loadConfig());
 window.addEventListener("beforeunload", () => controller.dispose());
+toggle.addEventListener("click", () => {
+  if (controller.getStatuses().length < 2) return;
+  expanded = !expanded;
+  queueRender();
+});
 void loadConfig();
 window.setInterval(async () => {
   try {

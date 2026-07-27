@@ -159,7 +159,7 @@ stage.addEventListener("dblclick", () => {
 void getCurrentWindow().onMoved(({ payload }) => {
   if (lastWindowX !== null && dragged) reactions.setDragging(payload.x >= lastWindowX ? "right" : "left");
   lastWindowX = payload.x;
-  void invoke("sync_status_window");
+  void invoke("sync_status_window", { contentHeight: null });
 });
 
 void listen<AgentEvent>("codex-event", ({ payload }) => {

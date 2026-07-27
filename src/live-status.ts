@@ -45,21 +45,29 @@ function eventPresentation(payload: AgentEvent): { phase: AgentStatusPhase; deta
 
 export class LiveStatusController {
   private readonly titles = new Map<string, string>();
-  private current: AgentLiveStatus | null = null;
-  private hideTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-  private latestEventTimestamp = Number.NEGATIVE_INFINITY;
-  private latestEventKeys = new Set<string>();
+  private readonly latestEvents = new Map<string, { timestamp: number; keys: Set<string> }>();
+  private readonly sessions = new Map<string, {
+    status: AgentLiveStatus;
+    hideTimer: ReturnType<typeof globalThis.setTimeout>;
+    updateOrder: number;
+  }>();
+  private updateOrder = 0;
 
-  constructor(private readonly onChange: (status: AgentLiveStatus | null) => void) {}
+  constructor(private readonly onChange: (statuses: AgentLiveStatus[]) => void) {}
 
   setAgentEvent(payload: AgentEvent): void {
     const presentation = eventPresentation(payload);
     if (!presentation) return;
     const eventKey = [payload.sessionId, payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? ""].join(":");
-    if (payload.timestamp < this.latestEventTimestamp || this.latestEventKeys.has(eventKey)) return;
-    if (payload.timestamp > this.latestEventTimestamp) this.latestEventKeys.clear();
-    this.latestEventTimestamp = Math.max(this.latestEventTimestamp, payload.timestamp);
-    this.latestEventKeys.add(eventKey);
+    const previous = this.sessions.get(payload.sessionId);
+    const latestEvent = this.latestEvents.get(payload.sessionId);
+    if (latestEvent && (payload.timestamp < latestEvent.timestamp || latestEvent.keys.has(eventKey))) return;
+
+    const latestEventKeys = payload.timestamp === latestEvent?.timestamp
+      ? latestEvent.keys
+      : new Set<string>();
+    latestEventKeys.add(eventKey);
+    this.latestEvents.set(payload.sessionId, { timestamp: payload.timestamp, keys: latestEventKeys });
 
     const suppliedTitle = sanitizeStatusText(payload.title);
     if (suppliedTitle) this.titles.set(payload.sessionId, suppliedTitle);
@@ -67,37 +75,53 @@ export class LiveStatusController {
       ? "Codex 状态更新失败"
       : this.titles.get(payload.sessionId) ?? (payload.event === "SessionStart" ? "Codex" : "Codex 任务");
 
-    this.current = {
+    const status: AgentLiveStatus = {
       sessionId: payload.sessionId,
       phase: presentation.phase,
       title,
       detail: presentation.detail,
       timestamp: payload.timestamp,
     };
-    this.onChange(this.current);
-    this.armTimeout(presentation.transient ? TRANSIENT_TIMEOUT_MS : ACTIVE_TIMEOUT_MS);
+    if (previous) globalThis.clearTimeout(previous.hideTimer);
+    const hideTimer = globalThis.setTimeout(
+      () => this.clear(payload.sessionId),
+      presentation.transient ? TRANSIENT_TIMEOUT_MS : ACTIVE_TIMEOUT_MS,
+    );
+    this.sessions.set(payload.sessionId, {
+      status,
+      hideTimer,
+      updateOrder: ++this.updateOrder,
+    });
+    this.emitChange();
   }
 
-  getCurrent(): AgentLiveStatus | null {
-    return this.current;
+  getStatuses(): AgentLiveStatus[] {
+    return [...this.sessions.values()]
+      .sort((left, right) => right.updateOrder - left.updateOrder)
+      .map(({ status }) => status);
   }
 
-  clear(): void {
-    if (this.hideTimer !== null) globalThis.clearTimeout(this.hideTimer);
-    this.hideTimer = null;
-    this.current = null;
-    this.onChange(null);
+  clear(sessionId?: string): void {
+    if (sessionId) {
+      const session = this.sessions.get(sessionId);
+      if (!session) return;
+      globalThis.clearTimeout(session.hideTimer);
+      this.sessions.delete(sessionId);
+    } else {
+      for (const session of this.sessions.values()) globalThis.clearTimeout(session.hideTimer);
+      this.sessions.clear();
+    }
+    this.emitChange();
   }
 
   dispose(): void {
     this.clear();
     this.titles.clear();
-    this.latestEventTimestamp = Number.NEGATIVE_INFINITY;
-    this.latestEventKeys.clear();
+    this.latestEvents.clear();
+    this.updateOrder = 0;
   }
 
-  private armTimeout(delay: number): void {
-    if (this.hideTimer !== null) globalThis.clearTimeout(this.hideTimer);
-    this.hideTimer = globalThis.setTimeout(() => this.clear(), delay);
+  private emitChange(): void {
+    this.onChange(this.getStatuses());
   }
 }
