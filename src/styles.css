@@ -33,13 +33,11 @@ button.compact { padding: 6px 10px; font-size: 12px; }
   width: 100%;
   min-height: 72px;
   padding: 14px 18px 14px 20px;
-  border: 1px solid #ffffffb8;
+  border: 1px solid rgb(72 84 88 / 18%);
   border-radius: 22px;
   color: #202628;
   background: rgb(247 248 246 / var(--bubble-opacity, .92));
-  box-shadow: 0 10px 28px #263b4230, inset 0 1px 0 #ffffffd9;
-  -webkit-backdrop-filter: blur(20px) saturate(1.25);
-  backdrop-filter: blur(20px) saturate(1.25);
+  box-shadow: 0 4px 10px #263b4218, inset 0 1px 0 #ffffffd9;
 }
 .status-copy { min-width: 0; flex: 1; }
 #status-title, #status-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
