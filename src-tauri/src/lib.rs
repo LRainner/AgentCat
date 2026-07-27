@@ -440,7 +440,7 @@ fn safe_position(
 }
 
 #[tauri::command]
-fn show_window(app: tauri::AppHandle, kind: String) -> Result<(), String> {
+async fn show_window(app: tauri::AppHandle, kind: String) -> Result<(), String> {
     show_aux_window(&app, &kind)
 }
 
@@ -600,7 +600,10 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
                 let _ = toggle_main_window(app);
             }
             "settings" => {
-                let _ = show_aux_window(app, "settings");
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = show_aux_window(&app, "settings");
+                });
             }
             "always-on-top" | "mouse-passthrough" | "lock-position" => {
                 let _ = toggle_window_setting(app, event.id().as_ref());
