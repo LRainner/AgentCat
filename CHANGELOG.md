@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/LRainner/AgentCat/compare/v1.2.3...v1.2.4) (2026-07-27)
+
+
+### Bug Fixes
+
+* **ci:** generate stable updater download URLs ([#16](https://github.com/LRainner/AgentCat/issues/16)) ([e08322f](https://github.com/LRainner/AgentCat/commit/e08322f89265448b1856f47c75c832270e19edd5))
+
 ## [1.2.3](https://github.com/LRainner/AgentCat/compare/v1.2.2...v1.2.3) (2026-07-26)
 
 
