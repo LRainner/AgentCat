@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/LRainner/AgentCat/compare/v1.3.0...v1.4.0) (2026-07-28)
+
+
+### Features
+
+* **codex:** detect interrupted session lifecycle ([#23](https://github.com/LRainner/AgentCat/issues/23)) ([662ccfc](https://github.com/LRainner/AgentCat/commit/662ccfc2ca39edf5da23ad9d00e229dc1ecfe72f))
+
 ## [1.3.0](https://github.com/LRainner/AgentCat/compare/v1.2.5...v1.3.0) (2026-07-27)
 
 
