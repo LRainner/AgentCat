@@ -71,6 +71,7 @@ async function refreshActivePet(): Promise<void> {
 async function applyConfig(next: AppConfig, forcePetRefresh = false): Promise<void> {
   const previous = config;
   config = next;
+  if (previous && previous.codex.hooksEnabled !== config.codex.hooksEnabled) reactions.reset();
   stage.style.setProperty("--pet-opacity", String(Math.min(1, Math.max(0.2, config.window.petOpacity))));
   const petChanged = forcePetRefresh
     || !previous

@@ -39,7 +39,7 @@ The current Windows build is not code-signed. Windows SmartScreen may show a war
 
 Agent Cat can react to Codex sessions through command hooks. The settings window can install, repair, test, and remove the integration while preserving hooks owned by other tools.
 
-The integration currently recognizes session, prompt, tool, subagent, compaction, permission, and stop events. Live status and task summaries can be enabled independently.
+The integration currently recognizes session start/end, prompt, tool, subagent, compaction, permission, completion, and interrupted-turn events. Live status and task summaries can be enabled independently.
 
 ## Pet packs
 
@@ -110,11 +110,11 @@ src-tauri/    Rust backend, Tauri configuration, and platform icons
 
 ## Privacy
 
-Agent Cat processes Codex events locally. By default, its hook helper extracts the session ID, hook event name, and a sanitized tool name from the hook payload, sends the resulting event through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately.
+Agent Cat processes Codex events locally. Its hook helper extracts lifecycle identifiers, the hook event name, a sanitized tool name, and the active transcript path, sends them through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately. To detect Esc interruptions, Agent Cat reads only newly appended local transcript records while a task is active and discards raw records after checking their lifecycle metadata.
 
 When task summaries are enabled, Agent Cat keeps at most the first non-empty prompt line, truncated to 80 characters, in memory for live display. It does not store the summary in its configuration, logs, or history.
 
-Agent Cat does not collect or persist full prompts, tool arguments, file contents, transcripts, terminal output, token usage, or model information. It does not maintain an activity history or send this data to a remote service.
+Agent Cat does not persist full prompts, tool arguments, file contents, transcripts, terminal output, token usage, or model information. It does not maintain an activity history or send this data to a remote service.
 
 ## Roadmap
 

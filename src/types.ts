@@ -37,8 +37,11 @@ export type AgentEvent = {
   timestamp: number;
   title?: string;
   toolName?: string;
+  turnId?: string;
+  sessionSource?: string;
+  compactTrigger?: string;
 };
-export type AgentStatusPhase = "starting" | "thinking" | "tool" | "waiting" | "done" | "error";
+export type AgentStatusPhase = "starting" | "thinking" | "tool" | "waiting" | "done" | "interrupted" | "error";
 export type AgentLiveStatus = {
   sessionId: string;
   phase: AgentStatusPhase;

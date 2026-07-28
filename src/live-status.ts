@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentLiveStatus, AgentStatusPhase } from "./types";
+import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
 
 const ACTIVE_TIMEOUT_MS = 120_000;
 const TRANSIENT_TIMEOUT_MS = 8_000;
@@ -28,16 +29,22 @@ function toolDetail(event: string, toolName?: string): string {
 
 function eventPresentation(payload: AgentEvent): { phase: AgentStatusPhase; detail: string; transient?: boolean } | null {
   switch (payload.event) {
-    case "SessionStart": return { phase: "starting", detail: "会话已开始", transient: true };
+    case "SessionStart": return payload.sessionSource === "compact"
+      ? null
+      : { phase: "starting", detail: "会话已开始", transient: true };
     case "UserPromptSubmit": return { phase: "thinking", detail: "正在理解任务" };
     case "PreToolUse": return { phase: "tool", detail: toolDetail(payload.event, payload.toolName) };
     case "PostToolUse": return { phase: "thinking", detail: toolDetail(payload.event, payload.toolName) };
     case "SubagentStart": return { phase: "tool", detail: "正在协作处理" };
     case "SubagentStop": return { phase: "thinking", detail: "正在汇总协作结果" };
     case "PreCompact": return { phase: "thinking", detail: "正在整理上下文" };
-    case "PostCompact": return { phase: "thinking", detail: "正在继续任务" };
+    case "PostCompact": return payload.compactTrigger === "manual"
+      ? { phase: "done", detail: "上下文整理完成", transient: true }
+      : { phase: "thinking", detail: "正在继续任务" };
     case "PermissionRequest": return { phase: "waiting", detail: "等待你的确认" };
     case "Stop": return { phase: "done", detail: "任务完成", transient: true };
+    case "SessionEnd": return { phase: "done", detail: "会话已退出", transient: true };
+    case "TurnInterrupted": return { phase: "interrupted", detail: "任务已中断", transient: true };
     case "HookParseError": return { phase: "error", detail: "无法解析 Codex 状态", transient: true };
     default: return null;
   }
@@ -46,6 +53,7 @@ function eventPresentation(payload: AgentEvent): { phase: AgentStatusPhase; deta
 export class LiveStatusController {
   private readonly titles = new Map<string, string>();
   private readonly latestEvents = new Map<string, { timestamp: number; keys: Set<string> }>();
+  private readonly terminalEvents = new TerminalEventLedger();
   private readonly sessions = new Map<string, {
     status: AgentLiveStatus;
     hideTimer: ReturnType<typeof globalThis.setTimeout>;
@@ -58,7 +66,8 @@ export class LiveStatusController {
   setAgentEvent(payload: AgentEvent): void {
     const presentation = eventPresentation(payload);
     if (!presentation) return;
-    const eventKey = [payload.sessionId, payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? ""].join(":");
+    const eventKey = agentEventKey(payload);
+    if (this.terminalEvents.shouldIgnore(payload, eventKey)) return;
     const previous = this.sessions.get(payload.sessionId);
     const latestEvent = this.latestEvents.get(payload.sessionId);
     if (latestEvent && (payload.timestamp < latestEvent.timestamp || latestEvent.keys.has(eventKey))) return;
@@ -68,6 +77,12 @@ export class LiveStatusController {
       : new Set<string>();
     latestEventKeys.add(eventKey);
     this.latestEvents.set(payload.sessionId, { timestamp: payload.timestamp, keys: latestEventKeys });
+    this.terminalEvents.recordActivity(payload);
+    if (payload.event === "Stop" || payload.event === "TurnInterrupted") {
+      this.terminalEvents.recordTurn(payload, eventKey);
+    } else if (payload.event === "SessionEnd") {
+      this.terminalEvents.recordSessionEnd(payload, eventKey);
+    }
 
     const suppliedTitle = sanitizeStatusText(payload.title);
     if (suppliedTitle) this.titles.set(payload.sessionId, suppliedTitle);
@@ -107,17 +122,24 @@ export class LiveStatusController {
       if (!session) return;
       globalThis.clearTimeout(session.hideTimer);
       this.sessions.delete(sessionId);
+      this.titles.delete(sessionId);
+      this.latestEvents.delete(sessionId);
     } else {
       for (const session of this.sessions.values()) globalThis.clearTimeout(session.hideTimer);
       this.sessions.clear();
+      this.titles.clear();
+      this.latestEvents.clear();
     }
     this.emitChange();
   }
 
   dispose(): void {
+    this.reset();
+  }
+
+  reset(): void {
     this.clear();
-    this.titles.clear();
-    this.latestEvents.clear();
+    this.terminalEvents.clear();
     this.updateOrder = 0;
   }
 
