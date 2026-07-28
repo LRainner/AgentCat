@@ -28,6 +28,8 @@ const eventLabels: Record<string, string> = {
   PostCompact: "继续任务",
   PermissionRequest: "等待确认",
   Stop: "任务完成",
+  SessionEnd: "会话退出",
+  TurnInterrupted: "任务中断",
   HookParseError: "解析失败",
 };
 const message = document.querySelector<HTMLElement>("#settings-message")!;

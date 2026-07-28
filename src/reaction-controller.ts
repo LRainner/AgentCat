@@ -1,58 +1,119 @@
 import type { AnimationName } from "./animation-table";
 import { PetRenderer } from "./pet-renderer";
+import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
 import type { AgentEvent } from "./types";
 
 type BaseState = "idle" | "working" | "waiting";
+type SessionState = {
+  base: BaseState;
+  compactResumeBase: BaseState | null;
+  inactivityTimer: number | null;
+  latestEventTimestamp: number;
+  latestEventKeys: Set<string>;
+};
 
 export class ReactionController {
   private base: BaseState = "idle";
+  private readonly sessions = new Map<string, SessionState>();
+  private readonly terminalEvents = new TerminalEventLedger();
   private dragging: "left" | "right" | null = null;
   private lookDirection: number | null = null;
   private queue: AnimationName[] = [];
   private playingReaction = false;
-  private inactivityTimer: number | null = null;
-  private latestEventTimestamp = Number.NEGATIVE_INFINITY;
-  private latestEventKeys = new Set<string>();
 
   constructor(private readonly renderer: PetRenderer) {}
 
   setAgentEvent(payload: AgentEvent): void {
-    const eventKey = [payload.sessionId, payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? ""].join(":");
-    if (payload.timestamp < this.latestEventTimestamp || this.latestEventKeys.has(eventKey)) return;
-    if (payload.timestamp > this.latestEventTimestamp) this.latestEventKeys.clear();
-    this.latestEventTimestamp = Math.max(this.latestEventTimestamp, payload.timestamp);
-    this.latestEventKeys.add(eventKey);
-    this.armInactivityTimeout();
+    const eventKey = agentEventKey(payload);
+    if (this.terminalEvents.shouldIgnore(payload, eventKey)) return;
+    const existing = this.sessions.get(payload.sessionId);
+    const session = existing ?? {
+      base: "idle",
+      compactResumeBase: null,
+      inactivityTimer: null,
+      latestEventTimestamp: Number.NEGATIVE_INFINITY,
+      latestEventKeys: new Set<string>(),
+    };
+    if (payload.timestamp < session.latestEventTimestamp || session.latestEventKeys.has(eventKey)) return;
+    if (payload.timestamp > session.latestEventTimestamp) session.latestEventKeys.clear();
+    session.latestEventTimestamp = Math.max(session.latestEventTimestamp, payload.timestamp);
+    session.latestEventKeys.add(eventKey);
+    this.sessions.set(payload.sessionId, session);
+    this.terminalEvents.recordActivity(payload);
+
+    let reaction: "start" | "complete" | "failed" | null = null;
     switch (payload.event) {
       case "SessionStart":
-        this.base = "idle";
-        this.replaceQueue(["waving"]);
+        if (payload.sessionSource !== "compact") {
+          session.base = "idle";
+          session.compactResumeBase = null;
+          reaction = "start";
+        }
         break;
       case "UserPromptSubmit":
       case "PreToolUse":
       case "PostToolUse":
       case "SubagentStart":
       case "SubagentStop":
+        session.base = "working";
+        break;
       case "PreCompact":
+        session.compactResumeBase = session.base;
+        session.base = "working";
+        break;
       case "PostCompact":
-        this.base = "working";
-        this.queue = [];
-        this.playingReaction = false;
-        this.render(true);
+        session.base = payload.compactTrigger === "manual"
+          ? "idle"
+          : session.compactResumeBase ?? "working";
+        session.compactResumeBase = null;
         break;
       case "PermissionRequest":
-        this.base = "waiting";
-        this.queue = [];
-        this.playingReaction = false;
-        this.render(true);
+        session.base = "waiting";
         break;
       case "Stop":
-        this.base = "idle";
-        this.replaceQueue(["review", "jumping"]);
+        session.base = "idle";
+        session.compactResumeBase = null;
+        this.terminalEvents.recordTurn(payload, eventKey);
+        reaction = "complete";
+        break;
+      case "TurnInterrupted":
+        session.base = "idle";
+        session.compactResumeBase = null;
+        this.terminalEvents.recordTurn(payload, eventKey);
+        this.queue = [];
+        this.playingReaction = false;
+        break;
+      case "SessionEnd":
+        this.clearSessionTimer(session);
+        session.base = "idle";
+        session.compactResumeBase = null;
+        this.terminalEvents.recordSessionEnd(payload, eventKey);
+        this.queue = [];
+        this.playingReaction = false;
         break;
       case "HookParseError":
-        this.replaceQueue(["failed"]);
+        reaction = "failed";
         break;
+    }
+    if (session.base === "idle") {
+      this.clearSessionTimer(session);
+      this.sessions.delete(payload.sessionId);
+    } else {
+      this.armInactivityTimeout(payload.sessionId, session);
+    }
+    this.base = this.aggregateBase();
+    if (this.base !== "idle") {
+      this.queue = [];
+      this.playingReaction = false;
+      this.render(true);
+    } else if (reaction === "complete") {
+      this.replaceQueue(["review", "jumping"]);
+    } else if (reaction === "start") {
+      this.replaceQueue(["waving"]);
+    } else if (reaction === "failed") {
+      this.replaceQueue(["failed"]);
+    } else {
+      this.render(true);
     }
   }
 
@@ -73,9 +134,22 @@ export class ReactionController {
 
   refresh(): void { this.render(true); }
 
+  reset(): void {
+    this.clearState();
+    this.render(true);
+  }
+
   dispose(): void {
-    if (this.inactivityTimer !== null) globalThis.clearTimeout(this.inactivityTimer);
-    this.inactivityTimer = null;
+    this.clearState();
+  }
+
+  private clearState(): void {
+    for (const session of this.sessions.values()) this.clearSessionTimer(session);
+    this.sessions.clear();
+    this.terminalEvents.clear();
+    this.base = "idle";
+    this.queue = [];
+    this.playingReaction = false;
   }
 
   private replaceQueue(queue: AnimationName[]): void {
@@ -107,10 +181,26 @@ export class ReactionController {
     else this.renderer.play("idle", { force });
   }
 
-  private armInactivityTimeout(): void {
-    if (this.inactivityTimer !== null) globalThis.clearTimeout(this.inactivityTimer);
-    this.inactivityTimer = globalThis.setTimeout(() => {
-      this.base = "idle";
+  private aggregateBase(): BaseState {
+    const bases = [...this.sessions.values()].map(({ base }) => base);
+    if (bases.includes("waiting")) return "waiting";
+    if (bases.includes("working")) return "working";
+    return "idle";
+  }
+
+  private clearSessionTimer(session: SessionState): void {
+    if (session.inactivityTimer !== null) globalThis.clearTimeout(session.inactivityTimer);
+    session.inactivityTimer = null;
+  }
+
+  private armInactivityTimeout(sessionId: string, session: SessionState): void {
+    this.clearSessionTimer(session);
+    if (session.base === "idle") return;
+    session.inactivityTimer = globalThis.setTimeout(() => {
+      const current = this.sessions.get(sessionId);
+      if (current !== session) return;
+      this.sessions.delete(sessionId);
+      this.base = this.aggregateBase();
       this.queue = [];
       this.playingReaction = false;
       this.render(true);

@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const EVENTS: [&str; 10] = [
+const EVENTS: [&str; 11] = [
     "SessionStart",
     "UserPromptSubmit",
     "PreToolUse",
@@ -17,6 +17,7 @@ const EVENTS: [&str; 10] = [
     "PostCompact",
     "PermissionRequest",
     "Stop",
+    "SessionEnd",
 ];
 
 #[cfg(not(windows))]

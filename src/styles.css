@@ -74,9 +74,12 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 .status-card[data-phase="waiting"] .status-indicator { border: 0; background: #f0b24f; animation: status-pulse 1.25s ease-in-out infinite; }
 .status-card[data-phase="waiting"] .status-indicator::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: white; }
 .status-card[data-phase="done"] .status-indicator,
+.status-card[data-phase="interrupted"] .status-indicator,
 .status-card[data-phase="error"] .status-indicator { display: grid; place-items: center; border: 0; color: white; animation: none; font-size: 20px; font-weight: 800; }
 .status-card[data-phase="done"] .status-indicator { background: #55a37a; }
 .status-card[data-phase="done"] .status-indicator::after { content: "✓"; transform: translateY(-1px); }
+.status-card[data-phase="interrupted"] .status-indicator { background: #7a8588; }
+.status-card[data-phase="interrupted"] .status-indicator::after { content: "×"; transform: translateY(-1px); }
 .status-card[data-phase="error"] .status-indicator { background: #bd5c55; }
 .status-card[data-phase="error"] .status-indicator::after { content: "!"; }
 @keyframes status-spin { to { transform: rotate(360deg); } }

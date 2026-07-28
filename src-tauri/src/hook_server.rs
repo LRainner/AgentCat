@@ -12,6 +12,7 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager};
 
+mod rollout_observer;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -22,7 +23,7 @@ use unix as transport;
 #[cfg(windows)]
 use windows as transport;
 
-const ALLOWED_EVENTS: [&str; 11] = [
+const HOOK_EVENTS: [&str; 11] = [
     "SessionStart",
     "UserPromptSubmit",
     "PreToolUse",
@@ -33,6 +34,22 @@ const ALLOWED_EVENTS: [&str; 11] = [
     "PostCompact",
     "PermissionRequest",
     "Stop",
+    "SessionEnd",
+];
+
+const DISPLAY_EVENTS: [&str; 13] = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
+    "PermissionRequest",
+    "Stop",
+    "SessionEnd",
+    "TurnInterrupted",
     "HookParseError",
 ];
 
@@ -48,6 +65,27 @@ pub struct AgentEvent {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compact_trigger: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HookWirePayload {
+    wire_version: u8,
+    event: AgentEvent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transcript_path: Option<String>,
+}
+
+#[derive(Debug)]
+struct DecodedHookPayload {
+    event: AgentEvent,
+    transcript_path: Option<PathBuf>,
 }
 
 static LATEST_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();
@@ -69,6 +107,10 @@ pub struct HookRuntimeStatus {
 struct CodexInput {
     session_id: Option<String>,
     hook_event_name: Option<String>,
+    turn_id: Option<String>,
+    transcript_path: Option<PathBuf>,
+    source: Option<String>,
+    trigger: Option<String>,
     prompt: Option<String>,
     tool_name: Option<String>,
 }
@@ -86,15 +128,26 @@ pub fn run_cli_hook() {
             .map_err(|error| error.to_string())?;
         let input: CodexInput =
             serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        let show_task_summary = config::load()
-            .map(|value| value.codex.show_task_summary)
-            .unwrap_or(false);
+        let codex_config = config::load().ok().map(|value| value.codex);
+        let transcript_path = codex_config
+            .as_ref()
+            .is_some_and(|value| value.hooks_enabled)
+            .then(|| input.transcript_path.clone())
+            .flatten();
+        let show_task_summary = codex_config
+            .as_ref()
+            .is_some_and(|value| value.show_task_summary);
         let event = build_event(input, show_task_summary, now_ms())?;
         let mut stream = transport::connect(&socket_path()?)?;
         stream
             .set_write_timeout(Some(Duration::from_millis(150)))
             .map_err(|error| error.to_string())?;
-        let payload = serde_json::to_vec(&event).map_err(|error| error.to_string())?;
+        let payload = serde_json::to_vec(&HookWirePayload {
+            wire_version: 2,
+            event,
+            transcript_path: transcript_path.map(|path| path.to_string_lossy().to_string()),
+        })
+        .map_err(|error| error.to_string())?;
         stream
             .write_all(&payload)
             .map_err(|error| error.to_string())?;
@@ -114,6 +167,7 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
         return Ok(false);
     }
     let listener = transport::bind(&socket)?;
+    rollout_observer::start(app.clone())?;
     OWNS_SOCKET.store(true, Ordering::Release);
     RECEIVER_RUNNING.store(true, Ordering::Release);
     let spawn_result = std::thread::Builder::new()
@@ -128,7 +182,13 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
                     .read_to_end(&mut bytes)
                     .map(|_| decode_wire_payload(&bytes))
                 {
-                    Ok(Ok(Some(event))) => emit_event(&app, event),
+                    Ok(Ok(Some(payload))) => {
+                        rollout_observer::handle_hook_event(
+                            &payload.event,
+                            payload.transcript_path.as_deref(),
+                        );
+                        emit_event(&app, payload.event);
+                    }
                     Ok(Ok(None)) => {}
                     Ok(Err(_)) => emit_parse_error(&app),
                     Err(_) => emit_parse_error(&app),
@@ -139,6 +199,7 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
         .map_err(|error| format!("启动 Hook 服务失败：{error}"));
     if spawn_result.is_err() {
         RECEIVER_RUNNING.store(false, Ordering::Release);
+        rollout_observer::cleanup();
         cleanup_owned_socket();
     }
     spawn_result.map(|_| true)
@@ -146,7 +207,12 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
 
 pub fn cleanup() {
     RECEIVER_RUNNING.store(false, Ordering::Release);
+    rollout_observer::cleanup();
     cleanup_owned_socket();
+}
+
+pub fn set_hooks_enabled(enabled: bool) {
+    rollout_observer::set_enabled(enabled);
 }
 
 fn cleanup_owned_socket() {
@@ -168,16 +234,29 @@ fn notify_existing_receiver(socket: &std::path::Path) -> bool {
     true
 }
 
-fn decode_wire_payload(bytes: &[u8]) -> Result<Option<AgentEvent>, String> {
+fn decode_wire_payload(bytes: &[u8]) -> Result<Option<DecodedHookPayload>, String> {
     if bytes == HEALTH_CHECK_PAYLOAD {
         return Ok(None);
     }
+    if let Ok(payload) = serde_json::from_slice::<HookWirePayload>(bytes) {
+        if payload.wire_version != 2 {
+            return Err("unsupported hook wire version".into());
+        }
+        let event = validate_incoming_event(payload.event)?;
+        return Ok(Some(DecodedHookPayload {
+            event,
+            transcript_path: payload.transcript_path.map(PathBuf::from),
+        }));
+    }
     let event = serde_json::from_slice::<AgentEvent>(bytes).map_err(|error| error.to_string())?;
-    validate_incoming_event(event).map(Some)
+    Ok(Some(DecodedHookPayload {
+        event: validate_incoming_event(event)?,
+        transcript_path: None,
+    }))
 }
 
 pub fn test_event(app: &AppHandle, event: &str) -> Result<(), String> {
-    if !ALLOWED_EVENTS.contains(&event) {
+    if !DISPLAY_EVENTS.contains(&event) {
         return Err("不支持的测试事件".into());
     }
     emit_event(
@@ -190,6 +269,9 @@ pub fn test_event(app: &AppHandle, event: &str) -> Result<(), String> {
             timestamp: now_ms(),
             title: (event == "UserPromptSubmit").then(|| "Agent Cat 实时状态测试".into()),
             tool_name: matches!(event, "PreToolUse" | "PostToolUse").then(|| "apply_patch".into()),
+            turn_id: None,
+            session_source: None,
+            compact_trigger: None,
         },
     );
     Ok(())
@@ -272,6 +354,9 @@ fn emit_parse_error(app: &AppHandle) {
             timestamp: now_ms(),
             title: None,
             tool_name: None,
+            turn_id: None,
+            session_source: None,
+            compact_trigger: None,
         },
     );
 }
@@ -308,7 +393,7 @@ fn build_event(
     let event = input
         .hook_event_name
         .ok_or_else(|| "hook_event_name missing".to_string())?;
-    if !ALLOWED_EVENTS[..ALLOWED_EVENTS.len() - 1].contains(&event.as_str()) {
+    if !HOOK_EVENTS.contains(&event.as_str()) {
         return Err("unsupported hook event".into());
     }
     let title = if show_task_summary && event == "UserPromptSubmit" {
@@ -324,6 +409,9 @@ fn build_event(
         timestamp,
         title,
         tool_name: input.tool_name.as_deref().and_then(sanitize_tool_name),
+        turn_id: input.turn_id.as_deref().and_then(sanitize_identifier),
+        session_source: input.source.as_deref().and_then(sanitize_hook_token),
+        compact_trigger: input.trigger.as_deref().and_then(sanitize_hook_token),
     })
 }
 
@@ -331,7 +419,7 @@ fn validate_incoming_event(mut event: AgentEvent) -> Result<AgentEvent, String> 
     if event.version != 1 || event.agent != "codex" {
         return Err("unsupported event envelope".into());
     }
-    if !ALLOWED_EVENTS[..ALLOWED_EVENTS.len() - 1].contains(&event.event.as_str()) {
+    if !HOOK_EVENTS.contains(&event.event.as_str()) {
         return Err("unsupported hook event".into());
     }
     if event.session_id.is_empty() || event.session_id.chars().count() > 256 {
@@ -339,6 +427,15 @@ fn validate_incoming_event(mut event: AgentEvent) -> Result<AgentEvent, String> 
     }
     event.title = event.title.as_deref().and_then(sanitize_display_text);
     event.tool_name = event.tool_name.as_deref().and_then(sanitize_tool_name);
+    event.turn_id = event.turn_id.as_deref().and_then(sanitize_identifier);
+    event.session_source = event
+        .session_source
+        .as_deref()
+        .and_then(sanitize_hook_token);
+    event.compact_trigger = event
+        .compact_trigger
+        .as_deref()
+        .and_then(sanitize_hook_token);
     Ok(event)
 }
 
@@ -376,6 +473,32 @@ fn sanitize_tool_name(value: &str) -> Option<String> {
         return None;
     }
     truncate_chars(value, 64)
+}
+
+fn sanitize_identifier(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.chars().count() > 256
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return None;
+    }
+    Some(value.to_string())
+}
+
+fn sanitize_hook_token(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.chars().count() > 32
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return None;
+    }
+    Some(value.to_ascii_lowercase())
 }
 
 fn sanitize_display_text(value: &str) -> Option<String> {
@@ -438,6 +561,10 @@ mod tests {
         let input = CodexInput {
             session_id: Some("session".into()),
             hook_event_name: Some("UserPromptSubmit".into()),
+            turn_id: Some("turn-1".into()),
+            transcript_path: None,
+            source: None,
+            trigger: None,
             prompt: Some("修复实时状态显示".into()),
             tool_name: Some("bad tool name".into()),
         };
@@ -445,6 +572,7 @@ mod tests {
         assert_eq!(event.timestamp, 42);
         assert_eq!(event.title, None);
         assert_eq!(event.tool_name, None);
+        assert_eq!(event.turn_id.as_deref(), Some("turn-1"));
     }
 
     #[test]
@@ -452,6 +580,10 @@ mod tests {
         let unknown = CodexInput {
             session_id: Some("session".into()),
             hook_event_name: Some("FutureEvent".into()),
+            turn_id: None,
+            transcript_path: None,
+            source: None,
+            trigger: None,
             prompt: None,
             tool_name: None,
         };
@@ -465,15 +597,47 @@ mod tests {
             timestamp: 42,
             title: Some("  hello\nworld  ".into()),
             tool_name: Some("bad tool".into()),
+            turn_id: Some("turn-1".into()),
+            session_source: Some("COMPACT".into()),
+            compact_trigger: Some("manual".into()),
         })
         .unwrap();
         assert_eq!(event.title.as_deref(), Some("hello world"));
         assert_eq!(event.tool_name, None);
+        assert_eq!(event.session_source.as_deref(), Some("compact"));
     }
 
     #[test]
     fn health_check_does_not_emit_a_parse_error() {
         assert!(decode_wire_payload(HEALTH_CHECK_PAYLOAD).unwrap().is_none());
         assert!(decode_wire_payload(b"").is_err());
+    }
+
+    #[test]
+    fn versioned_wire_payload_keeps_observer_path_inside_the_backend() {
+        let payload = HookWirePayload {
+            wire_version: 2,
+            event: AgentEvent {
+                version: 1,
+                agent: "codex".into(),
+                session_id: "session".into(),
+                event: "SessionEnd".into(),
+                timestamp: 42,
+                title: None,
+                tool_name: None,
+                turn_id: Some("turn-1".into()),
+                session_source: None,
+                compact_trigger: None,
+            },
+            transcript_path: Some("/private/transcript.jsonl".into()),
+        };
+        let decoded = decode_wire_payload(&serde_json::to_vec(&payload).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(decoded.event.event, "SessionEnd");
+        assert_eq!(
+            decoded.transcript_path.as_deref(),
+            Some(std::path::Path::new("/private/transcript.jsonl"))
+        );
     }
 }

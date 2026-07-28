@@ -39,7 +39,7 @@ Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变
 
 Agent Cat 通过 command Hook 响应 Codex 会话。你可以在设置窗口中安装、修复、测试或卸载集成；这一过程会保留其他工具已经配置的 Hook。
 
-当前集成可识别会话、用户提示、工具调用、子 Agent、上下文压缩、权限请求和停止等事件。实时状态和任务摘要可以分别开关。
+当前集成可识别会话开始/退出、用户提示、工具调用、子 Agent、上下文压缩、权限请求、完成和任务中断事件。实时状态和任务摘要可以分别开关。
 
 ## 宠物包
 
@@ -110,11 +110,11 @@ src-tauri/    Rust 后端、Tauri 配置和各平台图标
 
 ## 隐私
 
-Agent Cat 在本地处理 Codex 事件。默认情况下，Hook 辅助进程只从 Hook 载荷中提取会话 ID、Hook 事件名称和经过清理的工具名称；在 macOS 上通过本地 Unix Domain Socket、在 Windows 上通过仅监听回环地址的 TCP 连接发送处理后的事件，并立即退出。
+Agent Cat 在本地处理 Codex 事件。Hook 辅助进程从 Hook 载荷中提取生命周期标识、Hook 事件名称、经过清理的工具名称和当前 transcript 路径，通过 macOS 本地 Unix Domain Socket 或 Windows 回环连接发送后立即退出。为了识别 Esc 中断，Agent Cat 仅在任务执行期间读取本地 transcript 新增记录，并在检查生命周期元数据后丢弃原始记录。
 
 开启任务摘要后，Agent Cat 只在内存中保留用户提示的首个非空行，最多 80 个字符，用于实时展示。摘要不会写入配置、日志或历史记录。
 
-Agent Cat 不收集或持久化完整提示词、工具参数、文件内容、transcript、终端输出、token 用量或模型信息，不建立活动历史数据库，也不会将这些数据发送到远程服务。
+Agent Cat 不持久化完整提示词、工具参数、文件内容、transcript、终端输出、token 用量或模型信息，不建立活动历史数据库，也不会将这些数据发送到远程服务。
 
 ## 规划
 

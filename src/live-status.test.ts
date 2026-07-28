@@ -85,4 +85,71 @@ describe("LiveStatusController", () => {
     controller.dispose();
     vi.useRealTimers();
   });
+
+  it("presents manual compaction, interruption, and session exit as terminal hints", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("PostCompact", 1, { compactTrigger: "manual" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({ phase: "done", detail: "上下文整理完成" });
+    controller.setAgentEvent(event("TurnInterrupted", 2, { turnId: "turn-1" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({ phase: "interrupted", detail: "任务已中断" });
+    controller.setAgentEvent(event("SessionEnd", 3, { turnId: "turn-1" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({ phase: "done", detail: "会话已退出" });
+    vi.advanceTimersByTime(8_000);
+    expect(updates.at(-1)).toEqual([]);
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("preserves automatic compaction status when compact session start arrives", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("PostCompact", 1, { compactTrigger: "auto" }));
+    controller.setAgentEvent(event("SessionStart", 2, { sessionSource: "compact" }));
+    expect(updates).toHaveLength(1);
+    expect(updates.at(-1)?.[0]).toMatchObject({ phase: "thinking", detail: "正在继续任务" });
+    vi.advanceTimersByTime(8_000);
+    expect(updates.at(-1)?.[0]?.phase).toBe("thinking");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("keeps interruption terminal for the same turn and accepts a new turn", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("TurnInterrupted", 1, { turnId: "turn-1" }));
+    controller.setAgentEvent(event("PostToolUse", 2, { turnId: "turn-1" }));
+    expect(updates.at(-1)?.[0]?.phase).toBe("interrupted");
+    controller.setAgentEvent(event("UserPromptSubmit", 3, { turnId: "turn-2" }));
+    expect(updates.at(-1)?.[0]?.phase).toBe("thinking");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("ignores an old interruption after a newer turn is active", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("PreToolUse", 1, { turnId: "turn-1" }));
+    controller.setAgentEvent(event("UserPromptSubmit", 2, { turnId: "turn-2" }));
+    controller.setAgentEvent(event("TurnInterrupted", 3, { turnId: "turn-1" }));
+    expect(updates.at(-1)?.[0]?.phase).toBe("thinking");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("reset clears ended-session tombstones after integration is re-enabled", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("SessionEnd", 1, { turnId: "turn-1" }));
+    controller.reset();
+    controller.setAgentEvent(event("PreToolUse", 2, { turnId: "turn-2" }));
+    expect(updates.at(-1)?.[0]?.phase).toBe("tool");
+    controller.dispose();
+    vi.useRealTimers();
+  });
 });

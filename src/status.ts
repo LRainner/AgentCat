@@ -86,16 +86,26 @@ function queueRender(statuses = controller.getStatuses()): Promise<void> {
 const controller = new LiveStatusController((statuses) => queueRender(statuses));
 
 function acceptEvent(payload: AgentEvent): void {
-  const key = [payload.sessionId, payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? ""].join(":");
+  const key = [payload.sessionId, payload.turnId ?? "", payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? "", payload.sessionSource ?? "", payload.compactTrigger ?? ""].join(":");
   if (key === lastEventKey) return;
   lastEventKey = key;
   if (config?.codex.hooksEnabled && config.codex.showLiveStatus) controller.setAgentEvent(payload);
 }
 
 async function loadConfig(): Promise<void> {
-  config = await invoke<AppConfig>("get_config");
-  applyConfigStyles();
+  applyConfig(await invoke<AppConfig>("get_config"));
   await queueRender();
+}
+
+function applyConfig(next: AppConfig): void {
+  const wasEnabled = config?.codex.hooksEnabled && config.codex.showLiveStatus;
+  const isEnabled = next.codex.hooksEnabled && next.codex.showLiveStatus;
+  config = next;
+  if (wasEnabled !== undefined && wasEnabled !== isEnabled) {
+    lastEventKey = "";
+    controller.reset();
+  }
+  applyConfigStyles();
 }
 
 function applyConfigStyles(): void {
@@ -107,8 +117,7 @@ void listen<AgentEvent>("codex-event", ({ payload }) => {
   acceptEvent(payload);
 });
 void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
-  config = payload;
-  applyConfigStyles();
+  applyConfig(payload);
   queueRender();
 });
 void listen("agent-cat-config-changed", () => void loadConfig());
