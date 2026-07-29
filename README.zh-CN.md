@@ -14,6 +14,12 @@
 
 Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前已实现 macOS 和 Windows 上的 Codex 集成。
 
+<p align="center">
+  <a href="docs/images/agent-cat-overview.png">
+    <img src="docs/images/agent-cat-overview.png" width="92%" alt="Agent Cat 桌面宠物与重叠的 Codex 状态气泡" />
+  </a>
+</p>
+
 > **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统和 Windows 10 及以上系统，并已集成 Codex；更多 Agent 和操作系统仍在规划中。
 
 ## 下载
@@ -90,12 +96,22 @@ agent-cat --pet-debug
 
 ### 测试与构建
 
+首次运行浏览器测试或重新生成截图前，需要安装 Playwright Chromium：
+
+```bash
+npx playwright install chromium
+```
+
 ```bash
 npm test
+npm run test:e2e
+npm run screenshots
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri -- build
 ```
+
+`npm run screenshots` 会使用固定的本地模拟数据，重新生成 `docs/images` 中的项目截图。
 
 在 Windows 上只构建 NSIS 安装包可运行 `npm run build:windows`；在 macOS 上可用 `npm run build:macos` 构建 app bundle。
 
@@ -103,6 +119,8 @@ npm run tauri -- build
 
 ```text
 assets/       原创应用图标和菜单栏图标
+docs/         为 README 自动生成的项目截图
+e2e/          浏览器测试和固定截图生成器
 fixtures/     自动化测试使用的固定宠物样本
 src/          HTML、TypeScript、CSS 和前端测试
 src-tauri/    Rust 后端、Tauri 配置和各平台图标

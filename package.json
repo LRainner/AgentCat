@@ -12,7 +12,8 @@
     "build:ci:windows": "tauri build --bundles nsis --config src-tauri/tauri.ci.conf.json",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --project=e2e",
+    "screenshots": "playwright test --project=screenshots"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

@@ -1,0 +1,75 @@
+/* README-only product showcase used by the Playwright screenshot fixture. */
+:root {
+  font-family: Inter, ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #dce9e5;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+#showcase {
+  position: relative;
+  width: 1400px;
+  height: 560px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 12%, #fff9e8 0, transparent 31%),
+    radial-gradient(circle at 85% 82%, #e9c9b4 0, transparent 36%),
+    linear-gradient(145deg, #c9dfd9, #e9e7dc 56%, #ddc8bb);
+}
+
+.workspace-window {
+  position: absolute;
+  inset: 38px 48px;
+  overflow: hidden;
+  border: 1px solid #ffffff9c;
+  border-radius: 24px;
+  background: #f7faf8c9;
+  box-shadow: 0 30px 80px #4057522b, inset 0 1px 0 #fff;
+  backdrop-filter: blur(18px);
+}
+.workspace-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 50px;
+  padding: 0 18px;
+  border-bottom: 1px solid #cbd9d587;
+  color: #6c7b7b;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .04em;
+}
+.workspace-toolbar i { width: 10px; height: 10px; border-radius: 50%; background: #d6aaa0; }
+.workspace-toolbar i:nth-child(2) { background: #dfc68f; }
+.workspace-toolbar i:nth-child(3) { margin-right: 10px; background: #9fc5ad; }
+.workspace-body { display: grid; grid-template-columns: 176px 1fr; height: calc(100% - 50px); }
+.workspace-body aside { display: grid; align-content: start; gap: 14px; padding: 28px 24px; border-right: 1px solid #d7e1de8c; background: #e8efec91; }
+.workspace-body aside b { display: block; width: 82%; height: 9px; border-radius: 999px; background: #aabbb63f; }
+.workspace-body aside b:nth-child(2), .workspace-body aside b:nth-child(5) { width: 58%; }
+.code-lines { display: grid; align-content: start; gap: 18px; padding: 48px 56px; opacity: .48; }
+.code-lines span { display: block; width: var(--line-width); height: 11px; border-radius: 999px; background: linear-gradient(90deg, #66898487 0 24%, #bd765a72 24% 38%, #6d8c9882 38%); }
+.code-lines span:nth-child(3n + 2) { margin-left: 42px; }
+
+.settings-preview {
+  position: absolute;
+  top: 92px;
+  left: 88px;
+  width: 506px;
+  height: 396px;
+  overflow: hidden;
+  border: 1px solid #ffffffbf;
+  border-radius: 18px;
+  background: #f4f7f5;
+  box-shadow: 0 24px 64px #30494438, inset 0 1px 0 #fff;
+}
+.settings-preview iframe {
+  width: 920px;
+  height: 720px;
+  border: 0;
+  transform: scale(.55);
+  transform-origin: top left;
+}
+.companion-demo { position: absolute; right: 52px; bottom: 24px; width: 720px; height: 410px; }
+.companion-demo iframe { position: absolute; border: 0; background: transparent; color-scheme: light; }
+.status-frame { left: 36px; bottom: 108px; width: 400px; height: 276px; }
+.pet-frame { right: 12px; bottom: 0; width: 192px; height: 208px; }
