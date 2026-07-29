@@ -41,7 +41,7 @@ export type AgentEvent = {
   sessionSource?: string;
   compactTrigger?: string;
 };
-export type AgentStatusPhase = "starting" | "thinking" | "tool" | "waiting" | "done" | "interrupted" | "error";
+export type AgentStatusPhase = "starting" | "thinking" | "tool" | "waiting" | "stalled" | "done" | "interrupted" | "error";
 export type AgentLiveStatus = {
   sessionId: string;
   phase: AgentStatusPhase;

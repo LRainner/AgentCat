@@ -302,12 +302,29 @@ pub fn probe_hook() -> Result<HookRuntimeStatus, String> {
     }
     let timestamp = now_ms();
     let session_id = format!("agent-cat-probe-{timestamp}");
-    let payload = serde_json::to_vec(&serde_json::json!({
-        "session_id": session_id,
+    let turn_id = format!("probe-turn-{timestamp}");
+    relay_probe_event(serde_json::json!({
+        "session_id": &session_id,
         "hook_event_name": "UserPromptSubmit",
+        "turn_id": &turn_id,
         "prompt": "Agent Cat 连接测试"
-    }))
-    .map_err(|error| error.to_string())?;
+    }))?;
+    if !wait_for_probe_event(&session_id, "UserPromptSubmit") {
+        return Err("Hook 测试事件未到达 Agent Cat，请尝试重启应用".into());
+    }
+    relay_probe_event(serde_json::json!({
+        "session_id": &session_id,
+        "hook_event_name": "Stop",
+        "turn_id": &turn_id
+    }))?;
+    if !wait_for_probe_event(&session_id, "Stop") {
+        return Err("Hook 测试结束事件未到达 Agent Cat，请尝试重启应用".into());
+    }
+    Ok(runtime_status())
+}
+
+fn relay_probe_event(payload: serde_json::Value) -> Result<(), String> {
+    let payload = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
     let executable = std::env::current_exe()
         .map_err(|error| format!("无法确定 Agent Cat 可执行文件：{error}"))?;
     let mut child = Command::new(executable)
@@ -329,18 +346,22 @@ pub fn probe_hook() -> Result<HookRuntimeStatus, String> {
     if !result.success() {
         return Err("Hook 测试进程异常退出".into());
     }
+    Ok(())
+}
+
+fn wait_for_probe_event(session_id: &str, event: &str) -> bool {
     let deadline = Instant::now() + Duration::from_millis(500);
     while Instant::now() < deadline {
         if latest_event()
             .as_ref()
-            .map(|event| event.session_id == session_id)
+            .map(|value| value.session_id == session_id && value.event == event)
             .unwrap_or(false)
         {
-            return Ok(runtime_status());
+            return true;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    Err("Hook 测试事件未到达 Agent Cat，请尝试重启应用".into())
+    false
 }
 
 fn emit_parse_error(app: &AppHandle) {
