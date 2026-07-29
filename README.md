@@ -14,6 +14,12 @@
 
 Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex integration on macOS and Windows.
 
+<p align="center">
+  <a href="docs/images/agent-cat-overview.png">
+    <img src="docs/images/agent-cat-overview.png" width="92%" alt="Agent Cat desktop pet with overlapping Codex status bubbles" />
+  </a>
+</p>
+
 > **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and Windows 10 or later, and integrates with Codex. Support for more agents and operating systems is planned.
 
 ## Download
@@ -90,12 +96,22 @@ agent-cat --pet-debug
 
 ### Test and build
 
+Install Playwright Chromium once before running the browser tests or regenerating screenshots:
+
+```bash
+npx playwright install chromium
+```
+
 ```bash
 npm test
+npm run test:e2e
+npm run screenshots
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml
 npm run tauri -- build
 ```
+
+`npm run screenshots` regenerates the deterministic product images in `docs/images` with mocked local data.
 
 To build only the Windows NSIS installer, run `npm run build:windows` on Windows. On macOS, `npm run build:macos` builds the app bundle.
 
@@ -103,6 +119,8 @@ To build only the Windows NSIS installer, run `npm run build:windows` on Windows
 
 ```text
 assets/       Original application and menu bar artwork
+docs/         Product screenshots generated for the README
+e2e/          Browser tests and the deterministic screenshot generator
 fixtures/     Deterministic pet packs used by automated tests
 src/          HTML, TypeScript, CSS, and frontend tests
 src-tauri/    Rust backend, Tauri configuration, and platform icons
