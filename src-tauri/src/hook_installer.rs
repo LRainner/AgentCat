@@ -80,6 +80,57 @@ pub fn status() -> Result<HookStatus, String> {
     })
 }
 
+pub(crate) fn verification_fingerprint() -> Result<Option<String>, String> {
+    let path = path()?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let value = parse_existing(&path)?;
+    let command = expected_command()?;
+    Ok(fingerprint_for(&value, &command))
+}
+
+fn fingerprint_for(root: &Value, expected_command: &str) -> Option<String> {
+    let mut definitions = Vec::with_capacity(EVENTS.len());
+    for event in EVENTS {
+        let groups = root
+            .get("hooks")?
+            .get(event)?
+            .as_array()?
+            .iter()
+            .filter_map(|group| {
+                let handlers = group
+                    .get("hooks")?
+                    .as_array()?
+                    .iter()
+                    .filter(|handler| {
+                        handler.get("command").and_then(Value::as_str) == Some(expected_command)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if handlers.is_empty() {
+                    return None;
+                }
+                let mut definition = group.clone();
+                definition
+                    .as_object_mut()?
+                    .insert("hooks".into(), Value::Array(handlers));
+                Some(definition)
+            })
+            .collect::<Vec<_>>();
+        if groups.is_empty() {
+            return None;
+        }
+        definitions.push(json!({ "event": event, "groups": groups }));
+    }
+
+    let bytes = serde_json::to_vec(&definitions).ok()?;
+    let hash = bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    Some(format!("v1-{hash:016x}"))
+}
+
 pub fn install() -> Result<HookStatus, String> {
     let path = path()?;
     let mut root = if path.exists() {
@@ -321,5 +372,38 @@ mod tests {
             "SessionStart",
             "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex"
         ));
+    }
+
+    #[test]
+    fn verification_fingerprint_tracks_agent_cat_hook_definitions() {
+        let command = "'/Applications/Agent Cat.app/Contents/MacOS/agent-cat' hook --agent codex";
+        let mut root = json!({});
+        add_agent_cat_entries(&mut root, command).unwrap();
+        let original = fingerprint_for(&root, command).unwrap();
+
+        root["unrelated"] = json!(true);
+        assert_eq!(
+            fingerprint_for(&root, command).as_deref(),
+            Some(original.as_str())
+        );
+
+        root["hooks"]["Stop"][0]["hooks"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "type": "command",
+                "command": "other-tool notify",
+                "timeout": 30
+            }));
+        assert_eq!(
+            fingerprint_for(&root, command).as_deref(),
+            Some(original.as_str())
+        );
+
+        root["hooks"]["Stop"][0]["hooks"][0]["timeout"] = json!(3);
+        assert_ne!(
+            fingerprint_for(&root, command).as_deref(),
+            Some(original.as_str())
+        );
     }
 }

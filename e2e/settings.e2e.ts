@@ -81,9 +81,9 @@ test.beforeEach(async ({ page }) => {
             case "hook_runtime_status": return {
               receiverRunning: true,
               socketPath: "127.0.0.1:47321",
-              lastEventAt: null,
-              lastEvent: null,
-              lastEventIsTest: false,
+              verifiedAt: null,
+              lastRealEventAt: null,
+              lastRealEvent: null,
             };
             case "autostart_status": return false;
             default: return null;
