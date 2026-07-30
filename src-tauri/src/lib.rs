@@ -523,18 +523,19 @@ fn show_aux_window(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
         ),
         _ => return Err("未知窗口".into()),
     };
-    if let Some(window) = app.get_webview_window(label) {
-        window.show().map_err(|error| error.to_string())?;
-        window.set_focus().map_err(|error| error.to_string())?;
-        return Ok(());
-    }
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
-        .title(title)
-        .inner_size(width, height)
-        .min_inner_size(640.0, 520.0)
-        .center()
-        .build()
-        .map_err(|error| error.to_string())?;
+    let window = if let Some(window) = app.get_webview_window(label) {
+        window
+    } else {
+        WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
+            .title(title)
+            .inner_size(width, height)
+            .min_inner_size(640.0, 520.0)
+            .center()
+            .build()
+            .map_err(|error| error.to_string())?
+    };
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
     Ok(())
 }
 
