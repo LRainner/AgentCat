@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/LRainner/AgentCat/compare/v1.5.0...v1.5.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* **codex:** detect completed review turns ([#32](https://github.com/LRainner/AgentCat/issues/32)) ([fe62ef1](https://github.com/LRainner/AgentCat/commit/fe62ef152d456600c21324ec13f92bfe208dfd27))
+* **window:** focus settings on first open ([#30](https://github.com/LRainner/AgentCat/issues/30)) ([16b8390](https://github.com/LRainner/AgentCat/commit/16b83901566140cd26beb95577c3fb67785c4f78))
+
 ## [1.5.0](https://github.com/LRainner/AgentCat/compare/v1.4.0...v1.5.0) (2026-07-30)
 
 
