@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/LRainner/AgentCat/compare/v1.4.0...v1.5.0) (2026-07-30)
+
+
+### Features
+
+* **status:** improve live status feedback ([#26](https://github.com/LRainner/AgentCat/issues/26)) ([94898cd](https://github.com/LRainner/AgentCat/commit/94898cd9a546bea6b5dc6243b9b33a9b4dd69358))
+* **updater:** add background update indicator ([#29](https://github.com/LRainner/AgentCat/issues/29)) ([22b85eb](https://github.com/LRainner/AgentCat/commit/22b85eb3d48a821ce54565220846b714f32fc441))
+
+
+### Bug Fixes
+
+* **codex:** persist hook verification status ([#28](https://github.com/LRainner/AgentCat/issues/28)) ([c8eded8](https://github.com/LRainner/AgentCat/commit/c8eded80b3ceef01d6daaf72372d1f17fbc6c29b))
+
 ## [1.4.0](https://github.com/LRainner/AgentCat/compare/v1.3.0...v1.4.0) (2026-07-28)
 
 
