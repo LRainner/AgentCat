@@ -2,7 +2,23 @@ import type { AgentEvent, AgentLiveStatus, AgentStatusPhase } from "./types";
 import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
 
 const ACTIVE_TIMEOUT_MS = 120_000;
-const TRANSIENT_TIMEOUT_MS = 8_000;
+const STALLED_RETENTION_MS = 10 * 60_000;
+const SESSION_START_TIMEOUT_MS = 8_000;
+const COMPACT_DONE_TIMEOUT_MS = 10_000;
+const TASK_DONE_TIMEOUT_MS = 30_000;
+const INTERRUPTED_TIMEOUT_MS = 20_000;
+const SESSION_END_TIMEOUT_MS = 10_000;
+const ERROR_TIMEOUT_MS = 30_000;
+
+type StatusTimeout =
+  | { kind: "stale"; afterMs: number }
+  | { kind: "hide"; afterMs: number };
+
+type EventPresentation = {
+  phase: AgentStatusPhase;
+  detail: string;
+  timeout: StatusTimeout;
+};
 
 export function sanitizeStatusText(value: string | undefined, maxCharacters = 80): string | undefined {
   if (!value) return undefined;
@@ -15,37 +31,62 @@ export function sanitizeStatusText(value: string | undefined, maxCharacters = 80
 function toolDetail(event: string, toolName?: string): string {
   const completed = event === "PostToolUse";
   switch (toolName) {
-    case "Bash": return completed ? "正在检查命令结果" : "正在执行命令";
-    case "apply_patch": return completed ? "正在检查代码修改" : "正在修改代码";
-    case "update_plan": return completed ? "任务计划已更新" : "正在更新任务计划";
+    case "Bash": return completed ? "Bash 命令执行完成，正在分析结果" : "Bash 命令已开始执行";
+    case "apply_patch": return completed ? "代码修改已完成，正在检查结果" : "正在通过 apply_patch 修改代码";
+    case "update_plan": return completed ? "任务计划已更新，正在继续任务" : "正在更新任务计划";
     case "spawn_agent":
-    case "Agent": return completed ? "正在汇总协作结果" : "正在分配协作任务";
-    case "view_image": return completed ? "正在分析图片" : "正在查看图片";
+    case "Agent": return completed ? "协作任务已结束，正在整合结果" : "正在启动子 Agent 协作处理任务";
+    case "view_image": return completed ? "图片读取完成，正在分析内容" : "正在读取图片内容";
     default:
-      if (toolName?.startsWith("mcp__")) return completed ? "正在处理外部工具结果" : "正在使用外部工具";
-      return completed ? "正在处理工具结果" : "正在使用工具";
+      if (toolName?.startsWith("mcp__")) {
+        const [, server, ...toolParts] = toolName.split("__");
+        const label = server && toolParts.length > 0 ? `${server}/${toolParts.join("/")}` : toolName;
+        return completed
+          ? `外部工具 ${label} 已完成，正在处理结果`
+          : `正在调用外部工具 ${label}`;
+      }
+      if (toolName) {
+        return completed
+          ? `工具 ${toolName} 已完成，正在处理结果`
+          : `正在调用工具 ${toolName}`;
+      }
+      return completed ? "工具执行完成，正在处理结果" : "工具已开始执行";
   }
 }
 
-function eventPresentation(payload: AgentEvent): { phase: AgentStatusPhase; detail: string; transient?: boolean } | null {
+function active(phase: AgentStatusPhase, detail: string): EventPresentation {
+  return { phase, detail, timeout: { kind: "stale", afterMs: ACTIVE_TIMEOUT_MS } };
+}
+
+function transient(phase: AgentStatusPhase, detail: string, afterMs: number): EventPresentation {
+  return { phase, detail, timeout: { kind: "hide", afterMs } };
+}
+
+function stalledDetail(phase: AgentStatusPhase): string {
+  if (phase === "waiting") return "等待确认超过 2 分钟，请检查 Codex 状态";
+  if (phase === "tool") return "工具 2 分钟无更新，可能仍在执行或连接异常";
+  return "已 2 分钟无更新，任务可能卡住或连接异常";
+}
+
+function eventPresentation(payload: AgentEvent): EventPresentation | null {
   switch (payload.event) {
     case "SessionStart": return payload.sessionSource === "compact"
       ? null
-      : { phase: "starting", detail: "会话已开始", transient: true };
-    case "UserPromptSubmit": return { phase: "thinking", detail: "正在理解任务" };
-    case "PreToolUse": return { phase: "tool", detail: toolDetail(payload.event, payload.toolName) };
-    case "PostToolUse": return { phase: "thinking", detail: toolDetail(payload.event, payload.toolName) };
-    case "SubagentStart": return { phase: "tool", detail: "正在协作处理" };
-    case "SubagentStop": return { phase: "thinking", detail: "正在汇总协作结果" };
-    case "PreCompact": return { phase: "thinking", detail: "正在整理上下文" };
+      : transient("starting", "Codex 会话已启动，正在等待任务", SESSION_START_TIMEOUT_MS);
+    case "UserPromptSubmit": return active("thinking", "已收到新任务，正在分析需求");
+    case "PreToolUse": return active("tool", toolDetail(payload.event, payload.toolName));
+    case "PostToolUse": return active("thinking", toolDetail(payload.event, payload.toolName));
+    case "SubagentStart": return active("tool", "子 Agent 已启动，正在协作处理任务");
+    case "SubagentStop": return active("thinking", "子 Agent 已结束，正在整合协作结果");
+    case "PreCompact": return active("thinking", "上下文压缩已开始，正在整理会话");
     case "PostCompact": return payload.compactTrigger === "manual"
-      ? { phase: "done", detail: "上下文整理完成", transient: true }
-      : { phase: "thinking", detail: "正在继续任务" };
-    case "PermissionRequest": return { phase: "waiting", detail: "等待你的确认" };
-    case "Stop": return { phase: "done", detail: "任务完成", transient: true };
-    case "SessionEnd": return { phase: "done", detail: "会话已退出", transient: true };
-    case "TurnInterrupted": return { phase: "interrupted", detail: "任务已中断", transient: true };
-    case "HookParseError": return { phase: "error", detail: "无法解析 Codex 状态", transient: true };
+      ? transient("done", "手动上下文压缩已完成", COMPACT_DONE_TIMEOUT_MS)
+      : active("thinking", "自动上下文压缩已完成，正在继续任务");
+    case "PermissionRequest": return active("waiting", "Codex 请求操作确认，请返回 Codex 处理");
+    case "Stop": return transient("done", "Codex 已完成当前任务", TASK_DONE_TIMEOUT_MS);
+    case "SessionEnd": return transient("done", "Codex 会话已退出", SESSION_END_TIMEOUT_MS);
+    case "TurnInterrupted": return transient("interrupted", "当前任务已被中断", INTERRUPTED_TIMEOUT_MS);
+    case "HookParseError": return transient("error", "Agent Cat 无法解析最新的 Codex 状态", ERROR_TIMEOUT_MS);
     default: return null;
   }
 }
@@ -56,7 +97,7 @@ export class LiveStatusController {
   private readonly terminalEvents = new TerminalEventLedger();
   private readonly sessions = new Map<string, {
     status: AgentLiveStatus;
-    hideTimer: ReturnType<typeof globalThis.setTimeout>;
+    timeoutTimer: ReturnType<typeof globalThis.setTimeout>;
     updateOrder: number;
   }>();
   private updateOrder = 0;
@@ -97,15 +138,16 @@ export class LiveStatusController {
       detail: presentation.detail,
       timestamp: payload.timestamp,
     };
-    if (previous) globalThis.clearTimeout(previous.hideTimer);
-    const hideTimer = globalThis.setTimeout(
-      () => this.clear(payload.sessionId),
-      presentation.transient ? TRANSIENT_TIMEOUT_MS : ACTIVE_TIMEOUT_MS,
-    );
+    if (previous) globalThis.clearTimeout(previous.timeoutTimer);
+    const updateOrder = ++this.updateOrder;
+    const timeoutTimer = globalThis.setTimeout(() => {
+      if (presentation.timeout.kind === "stale") this.markStalled(payload.sessionId, updateOrder);
+      else this.clearIfCurrent(payload.sessionId, updateOrder);
+    }, presentation.timeout.afterMs);
     this.sessions.set(payload.sessionId, {
       status,
-      hideTimer,
-      updateOrder: ++this.updateOrder,
+      timeoutTimer,
+      updateOrder,
     });
     this.emitChange();
   }
@@ -120,12 +162,12 @@ export class LiveStatusController {
     if (sessionId) {
       const session = this.sessions.get(sessionId);
       if (!session) return;
-      globalThis.clearTimeout(session.hideTimer);
+      globalThis.clearTimeout(session.timeoutTimer);
       this.sessions.delete(sessionId);
       this.titles.delete(sessionId);
       this.latestEvents.delete(sessionId);
     } else {
-      for (const session of this.sessions.values()) globalThis.clearTimeout(session.hideTimer);
+      for (const session of this.sessions.values()) globalThis.clearTimeout(session.timeoutTimer);
       this.sessions.clear();
       this.titles.clear();
       this.latestEvents.clear();
@@ -145,5 +187,30 @@ export class LiveStatusController {
 
   private emitChange(): void {
     this.onChange(this.getStatuses());
+  }
+
+  private markStalled(sessionId: string, expectedOrder: number): void {
+    const current = this.sessions.get(sessionId);
+    if (!current || current.updateOrder !== expectedOrder) return;
+    const updateOrder = ++this.updateOrder;
+    const timeoutTimer = globalThis.setTimeout(
+      () => this.clearIfCurrent(sessionId, updateOrder),
+      STALLED_RETENTION_MS,
+    );
+    this.sessions.set(sessionId, {
+      status: {
+        ...current.status,
+        phase: "stalled",
+        detail: stalledDetail(current.status.phase),
+      },
+      timeoutTimer,
+      updateOrder,
+    });
+    this.emitChange();
+  }
+
+  private clearIfCurrent(sessionId: string, expectedOrder: number): void {
+    if (this.sessions.get(sessionId)?.updateOrder !== expectedOrder) return;
+    this.clear(sessionId);
   }
 }

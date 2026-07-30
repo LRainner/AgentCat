@@ -3,7 +3,9 @@ import { PetRenderer } from "./pet-renderer";
 import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
 import type { AgentEvent } from "./types";
 
-type BaseState = "idle" | "working" | "waiting";
+const STALLED_RETENTION_MS = 10 * 60_000;
+
+type BaseState = "idle" | "working" | "waiting" | "stalled";
 type SessionState = {
   base: BaseState;
   compactResumeBase: BaseState | null;
@@ -58,7 +60,7 @@ export class ReactionController {
         session.base = "working";
         break;
       case "PreCompact":
-        session.compactResumeBase = session.base;
+        session.compactResumeBase = session.base === "stalled" ? "working" : session.base;
         session.base = "working";
         break;
       case "PostCompact":
@@ -102,12 +104,12 @@ export class ReactionController {
       this.armInactivityTimeout(payload.sessionId, session);
     }
     this.base = this.aggregateBase();
-    if (this.base !== "idle") {
+    if (this.base === "waiting" || this.base === "working") {
       this.queue = [];
       this.playingReaction = false;
       this.render(true);
     } else if (reaction === "complete") {
-      this.replaceQueue(["review", "jumping"]);
+      this.replaceQueue(["review", "review", "jumping", "jumping"]);
     } else if (reaction === "start") {
       this.replaceQueue(["waving"]);
     } else if (reaction === "failed") {
@@ -118,7 +120,7 @@ export class ReactionController {
   }
 
   interact(animation: "waving" | "jumping"): void {
-    if (this.base !== "idle" || this.dragging) return;
+    if ((this.base !== "idle" && this.base !== "stalled") || this.dragging) return;
     this.replaceQueue([animation]);
   }
 
@@ -176,6 +178,7 @@ export class ReactionController {
       }});
       return;
     }
+    if (this.base === "stalled") { this.renderer.play("failed", { loop: true, force }); return; }
     this.playingReaction = false;
     if (this.lookDirection !== null) this.renderer.look(this.lookDirection);
     else this.renderer.play("idle", { force });
@@ -185,6 +188,7 @@ export class ReactionController {
     const bases = [...this.sessions.values()].map(({ base }) => base);
     if (bases.includes("waiting")) return "waiting";
     if (bases.includes("working")) return "working";
+    if (bases.includes("stalled")) return "stalled";
     return "idle";
   }
 
@@ -194,12 +198,21 @@ export class ReactionController {
   }
 
   private armInactivityTimeout(sessionId: string, session: SessionState): void {
+    if (session.base === "stalled") return;
     this.clearSessionTimer(session);
-    if (session.base === "idle") return;
+    if (session.base !== "working") return;
     session.inactivityTimer = globalThis.setTimeout(() => {
       const current = this.sessions.get(sessionId);
       if (current !== session) return;
-      this.sessions.delete(sessionId);
+      session.base = "stalled";
+      session.inactivityTimer = globalThis.setTimeout(() => {
+        const stalled = this.sessions.get(sessionId);
+        if (stalled !== session || session.base !== "stalled") return;
+        session.inactivityTimer = null;
+        this.sessions.delete(sessionId);
+        this.base = this.aggregateBase();
+        if (!this.dragging && !this.playingReaction) this.render(true);
+      }, STALLED_RETENTION_MS);
       this.base = this.aggregateBase();
       this.queue = [];
       this.playingReaction = false;
