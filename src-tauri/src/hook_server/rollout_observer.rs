@@ -345,7 +345,7 @@ fn rollout_terminal(line: &[u8], active_turn_id: Option<&str>) -> Option<Rollout
         .turn_id
         .as_deref()
         .and_then(sanitize_identifier)?;
-    if active_turn_id.is_some_and(|active| active != turn_id) {
+    if active_turn_id != Some(turn_id.as_str()) {
         return None;
     }
     Some(RolloutTerminal {
@@ -397,6 +397,7 @@ mod tests {
             })
         );
         assert_eq!(rollout_terminal(line, Some("turn-2")), None);
+        assert_eq!(rollout_terminal(line, None), None);
         assert_eq!(
             rollout_terminal(
                 br#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","reason":"replaced"}}"#,
@@ -417,6 +418,7 @@ mod tests {
             })
         );
         assert_eq!(rollout_terminal(line, Some("turn-2")), None);
+        assert_eq!(rollout_terminal(line, None), None);
     }
 
     #[test]
