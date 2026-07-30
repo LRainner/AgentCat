@@ -109,6 +109,7 @@ struct CodexInput {
     hook_event_name: Option<String>,
     turn_id: Option<String>,
     transcript_path: Option<PathBuf>,
+    display_title: Option<String>,
     source: Option<String>,
     trigger: Option<String>,
     prompt: Option<String>,
@@ -305,17 +306,9 @@ pub fn probe_hook() -> Result<HookRuntimeStatus, String> {
     let turn_id = format!("probe-turn-{timestamp}");
     relay_probe_event(serde_json::json!({
         "session_id": &session_id,
-        "hook_event_name": "UserPromptSubmit",
-        "turn_id": &turn_id,
-        "prompt": "Agent Cat 连接测试"
-    }))?;
-    if !wait_for_probe_event(&session_id, "UserPromptSubmit") {
-        return Err("Hook 测试事件未到达 Agent Cat，请尝试重启应用".into());
-    }
-    relay_probe_event(serde_json::json!({
-        "session_id": &session_id,
         "hook_event_name": "Stop",
-        "turn_id": &turn_id
+        "turn_id": &turn_id,
+        "display_title": "Agent Cat 连接测试"
     }))?;
     if !wait_for_probe_event(&session_id, "Stop") {
         return Err("Hook 测试结束事件未到达 Agent Cat，请尝试重启应用".into());
@@ -417,11 +410,17 @@ fn build_event(
     if !HOOK_EVENTS.contains(&event.as_str()) {
         return Err("unsupported hook event".into());
     }
-    let title = if show_task_summary && event == "UserPromptSubmit" {
-        input.prompt.as_deref().and_then(summarize_prompt)
-    } else {
-        None
-    };
+    let title = input
+        .display_title
+        .as_deref()
+        .and_then(sanitize_display_text)
+        .or_else(|| {
+            if show_task_summary && event == "UserPromptSubmit" {
+                input.prompt.as_deref().and_then(summarize_prompt)
+            } else {
+                None
+            }
+        });
     Ok(AgentEvent {
         version: 1,
         agent: "codex".into(),
@@ -584,6 +583,7 @@ mod tests {
             hook_event_name: Some("UserPromptSubmit".into()),
             turn_id: Some("turn-1".into()),
             transcript_path: None,
+            display_title: None,
             source: None,
             trigger: None,
             prompt: Some("修复实时状态显示".into()),
@@ -597,12 +597,26 @@ mod tests {
     }
 
     #[test]
+    fn explicit_display_title_is_sanitized_without_task_summaries() {
+        let input: CodexInput = serde_json::from_value(serde_json::json!({
+            "session_id": "agent-cat-probe-1",
+            "hook_event_name": "Stop",
+            "turn_id": "probe-turn-1",
+            "display_title": " Agent Cat\n连接测试 "
+        }))
+        .unwrap();
+        let event = build_event(input, false, 42).unwrap();
+        assert_eq!(event.title.as_deref(), Some("Agent Cat 连接测试"));
+    }
+
+    #[test]
     fn rejects_unknown_events_and_sanitizes_socket_payloads() {
         let unknown = CodexInput {
             session_id: Some("session".into()),
             hook_event_name: Some("FutureEvent".into()),
             turn_id: None,
             transcript_path: None,
+            display_title: None,
             source: None,
             trigger: None,
             prompt: None,

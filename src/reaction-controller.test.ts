@@ -22,6 +22,8 @@ describe("ReactionController", () => {
     controller.setDragging("right");
     controller.setDragging(null);
     expect(calls).toEqual(["waiting", "runningRight", "waiting"]);
+    vi.advanceTimersByTime(120_000);
+    expect(calls.at(-1)).toBe("waiting");
     vi.useRealTimers();
   });
 
@@ -31,7 +33,9 @@ describe("ReactionController", () => {
     controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "Stop", timestamp: 1 });
     complete();
     complete();
-    expect(calls).toEqual(["review", "jumping", "idle"]);
+    complete();
+    complete();
+    expect(calls).toEqual(["review", "review", "jumping", "jumping", "idle"]);
     vi.useRealTimers();
   });
 
@@ -47,12 +51,17 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
-  it("returns stale working state to idle after inactivity", () => {
+  it("keeps showing failed after inactivity until another event arrives", () => {
     vi.useFakeTimers();
     const { calls, controller } = harness();
     controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreToolUse", timestamp: 1 });
     vi.advanceTimersByTime(120_000);
-    expect(calls).toEqual(["running", "idle"]);
+    expect(calls).toEqual(["running", "failed"]);
+    controller.setDragging("right");
+    controller.setDragging(null);
+    expect(calls.slice(-2)).toEqual(["runningRight", "failed"]);
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PostToolUse", timestamp: 2 });
+    expect(calls.at(-1)).toBe("running");
     controller.dispose();
     vi.useRealTimers();
   });
@@ -118,12 +127,12 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
-  it("removes inactive sessions after their timeout", () => {
+  it("keeps inactive sessions so later activity can recover them", () => {
     vi.useFakeTimers();
     const { controller } = harness();
     controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreToolUse", timestamp: 1 });
     vi.advanceTimersByTime(120_000);
-    expect((controller as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
+    expect((controller as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(1);
     controller.dispose();
     vi.useRealTimers();
   });
@@ -134,6 +143,29 @@ describe("ReactionController", () => {
     controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreCompact", timestamp: 1, compactTrigger: "manual" });
     controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PostCompact", timestamp: 2, compactTrigger: "manual" });
     expect(calls.at(-1)).toBe("idle");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("recovers a stalled session when compaction starts", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreToolUse", timestamp: 1 });
+    vi.advanceTimersByTime(120_000);
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreCompact", timestamp: 2 });
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PostCompact", timestamp: 3, compactTrigger: "auto" });
+    expect(calls.at(-1)).toBe("running");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("lets another session completion interrupt the stalled animation", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "stalled", event: "PreToolUse", timestamp: 1 });
+    vi.advanceTimersByTime(120_000);
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "done", event: "Stop", timestamp: 2 });
+    expect(calls.at(-1)).toBe("review");
     controller.dispose();
     vi.useRealTimers();
   });
