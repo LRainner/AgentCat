@@ -111,6 +111,26 @@ test("switches between the three settings pages", async ({ page }) => {
   await expect(page.locator("#settings-page-title")).toHaveText("关于");
 });
 
+test("shows a persisted update indicator until the about page is viewed", async ({ page }) => {
+  await page.goto("/settings.html");
+  await page.evaluate(() => {
+    localStorage.setItem("agent-cat-update-state", JSON.stringify({
+      version: 1,
+      checkedAt: Date.now(),
+      checkedFromVersion: "1.1.0",
+      availableVersion: "1.2.0",
+      seenVersion: null,
+    }));
+  });
+  await page.reload();
+
+  await expect(page.locator("#about-update-dot")).toBeVisible();
+  await page.getByRole("tab", { name: /关于/ }).click();
+  await expect(page.locator("#about-update-dot")).toBeHidden();
+  await expect(page.locator("#update-status-title")).toHaveText("发现新版本 v1.2.0");
+  await expect(page.getByRole("button", { name: "下载更新" })).toBeVisible();
+});
+
 test("keeps the sidebar fixed and renders the app and navigation icons", async ({ page }) => {
   await page.goto("/settings.html#about");
   await expect.poll(() => page.locator(".settings-brand-mark").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);

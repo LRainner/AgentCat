@@ -1,10 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { PetRenderer } from "./pet-renderer";
 import { PointerController } from "./pointer-controller";
 import { ReactionController } from "./reaction-controller";
 import type { AgentEvent, AppConfig, CatalogResult, PetDescriptor } from "./types";
+import {
+  nextUpdateCheckDelay,
+  readUpdateState,
+  recordUpdateCheck,
+  UPDATE_CHECK_RETRY_MS,
+  UPDATE_STATE_EVENT,
+} from "./update-indicator";
 
 const stage = document.querySelector<HTMLElement>("#pet-stage")!;
 const sprite = document.querySelector<HTMLElement>("#pet-sprite")!;
@@ -20,6 +29,37 @@ let pointerDown: { x: number; y: number } | null = null;
 let lastWindowX: number | null = null;
 let clickTimer: number | null = null;
 let petLoadRequest = 0;
+let updateCheckTimer: number | null = null;
+
+const INITIAL_UPDATE_CHECK_DELAY_MS = 15_000;
+
+function scheduleUpdateCheck(delay: number): void {
+  if (updateCheckTimer !== null) window.clearTimeout(updateCheckTimer);
+  updateCheckTimer = window.setTimeout(() => void checkForUpdatesInBackground(), delay);
+}
+
+async function checkForUpdatesInBackground(): Promise<void> {
+  updateCheckTimer = null;
+  let update: Update | null = null;
+  try {
+    const currentVersion = await getVersion();
+    const state = readUpdateState(localStorage, currentVersion);
+    const wait = nextUpdateCheckDelay(state);
+    if (wait > 0) {
+      scheduleUpdateCheck(wait);
+      return;
+    }
+
+    update = await check();
+    const next = recordUpdateCheck(localStorage, currentVersion, update?.version ?? null);
+    await emit(UPDATE_STATE_EVENT, next);
+    scheduleUpdateCheck(nextUpdateCheckDelay(next));
+  } catch {
+    scheduleUpdateCheck(UPDATE_CHECK_RETRY_MS);
+  } finally {
+    await update?.close().catch(() => undefined);
+  }
+}
 
 function resolvePet(catalog: CatalogResult, value: AppConfig): PetDescriptor | null {
   if (value.pet) {
@@ -177,5 +217,9 @@ void listen("agent-cat-config-changed", async () => {
     errorBox.textContent = String(error);
   }
 });
-window.addEventListener("beforeunload", () => reactions.dispose());
+window.addEventListener("beforeunload", () => {
+  reactions.dispose();
+  if (updateCheckTimer !== null) window.clearTimeout(updateCheckTimer);
+});
+scheduleUpdateCheck(INITIAL_UPDATE_CHECK_DELAY_MS);
 void load();
