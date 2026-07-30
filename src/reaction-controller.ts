@@ -3,6 +3,8 @@ import { PetRenderer } from "./pet-renderer";
 import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
 import type { AgentEvent } from "./types";
 
+const STALLED_RETENTION_MS = 10 * 60_000;
+
 type BaseState = "idle" | "working" | "waiting" | "stalled";
 type SessionState = {
   base: BaseState;
@@ -196,13 +198,21 @@ export class ReactionController {
   }
 
   private armInactivityTimeout(sessionId: string, session: SessionState): void {
+    if (session.base === "stalled") return;
     this.clearSessionTimer(session);
     if (session.base !== "working") return;
     session.inactivityTimer = globalThis.setTimeout(() => {
       const current = this.sessions.get(sessionId);
       if (current !== session) return;
-      session.inactivityTimer = null;
       session.base = "stalled";
+      session.inactivityTimer = globalThis.setTimeout(() => {
+        const stalled = this.sessions.get(sessionId);
+        if (stalled !== session || session.base !== "stalled") return;
+        session.inactivityTimer = null;
+        this.sessions.delete(sessionId);
+        this.base = this.aggregateBase();
+        if (!this.dragging && !this.playingReaction) this.render(true);
+      }, STALLED_RETENTION_MS);
       this.base = this.aggregateBase();
       this.queue = [];
       this.playingReaction = false;

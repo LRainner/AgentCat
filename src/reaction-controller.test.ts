@@ -137,6 +137,32 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
+  it("removes a stalled session after the warning retention period", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreToolUse", timestamp: 1 });
+    vi.advanceTimersByTime(120_000 + 10 * 60_000 - 1);
+    expect((controller as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect((controller as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
+    expect(calls.at(-1)).toBe("idle");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("cancels stalled cleanup when a later event changes the session state", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreToolUse", timestamp: 1 });
+    vi.advanceTimersByTime(120_000 + 5 * 60_000);
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PermissionRequest", timestamp: 2 });
+    vi.advanceTimersByTime(5 * 60_000);
+    expect((controller as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(1);
+    expect(calls.at(-1)).toBe("waiting");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
   it("returns manual compaction to idle", () => {
     vi.useFakeTimers();
     const { calls, controller } = harness();
