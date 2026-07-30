@@ -111,13 +111,15 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 .settings-nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; color: #536467; text-align: left; background: transparent; border-radius: 12px; }
 .settings-nav-item:hover { color: #35484a; background: #ffffff8c; transform: none; }
 .settings-nav-item.active { color: #b44b2c; background: white; box-shadow: 0 7px 20px #334b4510; }
-.settings-nav-item > span:last-child { min-width: 0; }
+.settings-nav-item > span:nth-child(2) { min-width: 0; flex: 1; }
 .settings-nav-item strong, .settings-nav-item small { display: block; }
 .settings-nav-item strong { font-size: 13px; }
 .settings-nav-item small { margin-top: 2px; overflow: hidden; color: #879395; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .settings-nav-icon { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; border-radius: 9px; color: #66787a; background: #dfe8e5; }
 .settings-nav-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .settings-nav-item.active .settings-nav-icon { color: #c45332; background: #fde8dd; }
+.settings-update-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #e87535; box-shadow: 0 0 0 3px #e8753520; }
+.settings-update-dot[hidden] { display: none; }
 .settings-content { min-width: 0; height: 100vh; padding: 27px 30px 54px; overflow-y: auto; }
 .settings-header { margin-bottom: 20px; }
 .settings-header h1 { font-size: 29px; }

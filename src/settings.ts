@@ -4,6 +4,14 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { AppConfig, CatalogResult, PetDescriptor, PetSource } from "./types";
+import {
+  hasUnseenUpdate,
+  markUpdateSeen,
+  readUpdateState,
+  recordUpdateCheck,
+  UPDATE_STATE_EVENT,
+  type UpdateIndicatorState,
+} from "./update-indicator";
 import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgressPercent } from "./update-progress";
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; installedEvents: number; expectedEvents: number; message: string };
@@ -46,7 +54,10 @@ let previewFrame: number | null = null;
 let pendingPreview: AppConfig | null = null;
 let currentVersion = "";
 let pendingUpdate: Update | null = null;
+let updateChecking = false;
 let updateInstalling = false;
+let activeSettingsPage: SettingsPage = "general";
+let updateState: UpdateIndicatorState | null = null;
 const previewImageCache = new Map<string, Promise<string>>();
 const configEventSource = `settings-${crypto.randomUUID()}`;
 
@@ -55,11 +66,15 @@ function input<T extends HTMLInputElement>(id: string): T { return document.quer
 async function initialize(): Promise<void> {
   [config, currentVersion] = await Promise.all([invoke<AppConfig>("get_config"), getVersion()]);
   document.querySelector<HTMLElement>("#current-version")!.textContent = `v${currentVersion}`;
+  updateState = readUpdateState(localStorage, currentVersion);
+  refreshUpdateIndicator();
+  if (activeSettingsPage === "about") acknowledgeKnownUpdate();
   bindConfig();
   await Promise.all([refreshCatalog(), refreshHookStatus(), refreshAutostart()]);
 }
 
 function showSettingsPage(page: SettingsPage, updateHash = true): void {
+  activeSettingsPage = page;
   const copy = settingsPageCopy[page];
   document.querySelector<HTMLElement>("#settings-page-eyebrow")!.textContent = copy.eyebrow;
   document.querySelector<HTMLElement>("#settings-page-title")!.textContent = copy.title;
@@ -73,6 +88,33 @@ function showSettingsPage(page: SettingsPage, updateHash = true): void {
     panel.hidden = panel.dataset.settingsPanel !== page;
   }
   if (updateHash && window.location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
+  if (page === "about" && currentVersion) acknowledgeKnownUpdate();
+}
+
+function refreshUpdateIndicator(): void {
+  document.querySelector<HTMLElement>("#about-update-dot")!.hidden = !hasUnseenUpdate(updateState);
+}
+
+function acknowledgeKnownUpdate(): void {
+  if (!updateState?.availableVersion) return;
+  updateState = markUpdateSeen(localStorage, updateState);
+  refreshUpdateIndicator();
+  if (!pendingUpdate && !updateChecking) {
+    const card = document.querySelector<HTMLElement>("#update-status-card")!;
+    card.dataset.state = "ready";
+    card.querySelector<HTMLElement>(".update-status-glyph")!.textContent = "\u2193";
+    document.querySelector<HTMLElement>("#update-status-title")!.textContent = `发现新版本 v${updateState.availableVersion}`;
+    document.querySelector<HTMLElement>("#update-status-detail")!.textContent = "点击下载后将验证更新包，并等待安装。";
+    const button = document.querySelector<HTMLButtonElement>("#check-update")!;
+    button.textContent = "下载更新";
+  }
+}
+
+async function publishUpdateState(availableVersion: string | null): Promise<void> {
+  updateState = recordUpdateCheck(localStorage, currentVersion, availableVersion);
+  if (activeSettingsPage === "about") updateState = markUpdateSeen(localStorage, updateState);
+  refreshUpdateIndicator();
+  await emit(UPDATE_STATE_EVENT, updateState);
 }
 
 async function checkForUpdates(): Promise<void> {
@@ -85,6 +127,7 @@ async function checkForUpdates(): Promise<void> {
   const progressElement = document.querySelector<HTMLElement>("#update-progress")!;
   const progressBar = document.querySelector<HTMLElement>("#update-progress-bar")!;
   await closePendingUpdate();
+  updateChecking = true;
   button.disabled = true;
   button.textContent = "正在检查…";
   button.hidden = false;
@@ -99,12 +142,15 @@ async function checkForUpdates(): Promise<void> {
   try {
     update = await check();
     if (!update) {
+      await publishUpdateState(null);
       card.dataset.state = "current";
       icon.textContent = "\u2713";
       title.textContent = "已是最新版本";
       detail.textContent = `当前版本 v${currentVersion}，暂无可用更新。`;
       return;
     }
+
+    await publishUpdateState(update.version);
 
     card.dataset.state = "downloading";
     icon.textContent = "\u2193";
@@ -139,6 +185,7 @@ async function checkForUpdates(): Promise<void> {
     progressElement.hidden = true;
     button.hidden = false;
   } finally {
+    updateChecking = false;
     button.disabled = false;
     button.textContent = "再次检查";
   }
@@ -553,6 +600,12 @@ void listen<{ source?: string }>("agent-cat-config-changed", async ({ payload })
 });
 void listen("agent-cat-autostart-changed", () => void refreshAutostart());
 void listen("codex-event", () => void refreshHookStatus());
+void listen<UpdateIndicatorState>(UPDATE_STATE_EVENT, ({ payload }) => {
+  if (payload.checkedFromVersion !== currentVersion) return;
+  updateState = payload;
+  refreshUpdateIndicator();
+  if (activeSettingsPage === "about") acknowledgeKnownUpdate();
+});
 const healthTimer = window.setInterval(() => void refreshHookStatus(), 5_000);
 window.addEventListener("beforeunload", () => {
   window.clearInterval(healthTimer);
