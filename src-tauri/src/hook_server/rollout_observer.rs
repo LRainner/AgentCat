@@ -20,6 +20,19 @@ const MAX_LINE_BYTES: usize = 256 * 1024;
 const MAX_WATCH_ENTRIES: usize = 64;
 const MAX_TERMINAL_TURNS_PER_ENTRY: usize = 8;
 const TURN_ABORTED_MARKER: &[u8] = b"turn_aborted";
+const TASK_COMPLETE_MARKER: &[u8] = b"task_complete";
+
+#[derive(Debug, PartialEq, Eq)]
+enum RolloutTerminalKind {
+    Completed,
+    Interrupted,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct RolloutTerminal {
+    kind: RolloutTerminalKind,
+    turn_id: String,
+}
 
 struct ObserverRuntime {
     running: Arc<AtomicBool>,
@@ -210,19 +223,22 @@ fn observe(
                 if !entry.active {
                     continue;
                 }
-                if let Some(turn_id) = poll_entry(entry) {
-                    mark_terminal(entry, Some(&turn_id));
+                if let Some(terminal) = poll_entry(entry) {
+                    mark_terminal(entry, Some(&terminal.turn_id));
                     emit_event(
                         &app,
                         AgentEvent {
                             version: 1,
                             agent: "codex".into(),
                             session_id: session_id.clone(),
-                            event: "TurnInterrupted".into(),
+                            event: match terminal.kind {
+                                RolloutTerminalKind::Completed => "Stop".into(),
+                                RolloutTerminalKind::Interrupted => "TurnInterrupted".into(),
+                            },
                             timestamp: now_ms(),
                             title: None,
                             tool_name: None,
-                            turn_id: Some(turn_id),
+                            turn_id: Some(terminal.turn_id),
                             session_source: None,
                             compact_trigger: None,
                         },
@@ -260,7 +276,7 @@ fn mark_terminal(entry: &mut WatchEntry, turn_id: Option<&str>) {
     entry.discarding_line = false;
 }
 
-fn poll_entry(entry: &mut WatchEntry) -> Option<String> {
+fn poll_entry(entry: &mut WatchEntry) -> Option<RolloutTerminal> {
     let length = entry.path.metadata().ok()?.len();
     if length < entry.offset {
         entry.offset = 0;
@@ -278,13 +294,13 @@ fn poll_entry(entry: &mut WatchEntry) -> Option<String> {
     consume_bytes(entry, &bytes)
 }
 
-fn consume_bytes(entry: &mut WatchEntry, bytes: &[u8]) -> Option<String> {
+fn consume_bytes(entry: &mut WatchEntry, bytes: &[u8]) -> Option<RolloutTerminal> {
     for byte in bytes {
         if *byte == b'\n' {
             let detected = if entry.discarding_line {
                 None
             } else {
-                interrupted_turn(&entry.partial_line, entry.active_turn_id.as_deref())
+                rollout_terminal(&entry.partial_line, entry.active_turn_id.as_deref())
             };
             entry.partial_line.clear();
             entry.discarding_line = false;
@@ -303,20 +319,27 @@ fn consume_bytes(entry: &mut WatchEntry, bytes: &[u8]) -> Option<String> {
     None
 }
 
-fn interrupted_turn(line: &[u8], active_turn_id: Option<&str>) -> Option<String> {
-    if !line
+fn rollout_terminal(line: &[u8], active_turn_id: Option<&str>) -> Option<RolloutTerminal> {
+    let may_be_interrupted = line
         .windows(TURN_ABORTED_MARKER.len())
-        .any(|window| window == TURN_ABORTED_MARKER)
-    {
+        .any(|window| window == TURN_ABORTED_MARKER);
+    let may_be_completed = line
+        .windows(TASK_COMPLETE_MARKER.len())
+        .any(|window| window == TASK_COMPLETE_MARKER);
+    if !may_be_interrupted && !may_be_completed {
         return None;
     }
     let line: RolloutLine = serde_json::from_slice(line).ok()?;
-    if line.kind != "event_msg"
-        || line.payload.kind.as_deref() != Some("turn_aborted")
-        || line.payload.reason.as_deref() != Some("interrupted")
-    {
+    if line.kind != "event_msg" {
         return None;
     }
+    let kind = match line.payload.kind.as_deref()? {
+        "task_complete" => RolloutTerminalKind::Completed,
+        "turn_aborted" if line.payload.reason.as_deref() == Some("interrupted") => {
+            RolloutTerminalKind::Interrupted
+        }
+        _ => return None,
+    };
     let turn_id = line
         .payload
         .turn_id
@@ -325,7 +348,10 @@ fn interrupted_turn(line: &[u8], active_turn_id: Option<&str>) -> Option<String>
     if active_turn_id.is_some_and(|active| active != turn_id) {
         return None;
     }
-    Some(turn_id)
+    Some(RolloutTerminal {
+        kind,
+        turn_id: turn_id.to_string(),
+    })
 }
 
 fn validate_rollout_path(path: &Path, session_id: &str) -> Option<PathBuf> {
@@ -364,17 +390,33 @@ mod tests {
     fn detects_only_matching_interrupted_turns() {
         let line = br#"{"timestamp":"now","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","reason":"interrupted"}}"#;
         assert_eq!(
-            interrupted_turn(line, Some("turn-1")).as_deref(),
-            Some("turn-1")
+            rollout_terminal(line, Some("turn-1")),
+            Some(RolloutTerminal {
+                kind: RolloutTerminalKind::Interrupted,
+                turn_id: "turn-1".into(),
+            })
         );
-        assert_eq!(interrupted_turn(line, Some("turn-2")), None);
+        assert_eq!(rollout_terminal(line, Some("turn-2")), None);
         assert_eq!(
-            interrupted_turn(
+            rollout_terminal(
                 br#"{"type":"event_msg","payload":{"type":"turn_aborted","turn_id":"turn-1","reason":"replaced"}}"#,
                 Some("turn-1")
             ),
             None
         );
+    }
+
+    #[test]
+    fn detects_only_matching_completed_turns() {
+        let line = br#"{"timestamp":"now","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}"#;
+        assert_eq!(
+            rollout_terminal(line, Some("turn-1")),
+            Some(RolloutTerminal {
+                kind: RolloutTerminalKind::Completed,
+                turn_id: "turn-1".into(),
+            })
+        );
+        assert_eq!(rollout_terminal(line, Some("turn-2")), None);
     }
 
     #[test]
@@ -384,14 +426,24 @@ mod tests {
         let second = br#", "reason":"interrupted"}}
 "#;
         assert_eq!(consume_bytes(&mut entry, first), None);
-        assert_eq!(consume_bytes(&mut entry, second).as_deref(), Some("turn-1"));
+        assert_eq!(
+            consume_bytes(&mut entry, second),
+            Some(RolloutTerminal {
+                kind: RolloutTerminalKind::Interrupted,
+                turn_id: "turn-1".into(),
+            })
+        );
         assert!(entry.partial_line.is_empty());
     }
 
     #[test]
     fn ignores_marker_text_outside_the_event_envelope() {
-        let line = br#"{"type":"response_item","payload":{"type":"message","text":"turn_aborted interrupted"}}"#;
-        assert_eq!(interrupted_turn(line, None), None);
+        for line in [
+            br#"{"type":"response_item","payload":{"type":"message","text":"turn_aborted interrupted"}}"#.as_slice(),
+            br#"{"type":"response_item","payload":{"type":"message","text":"task_complete"}}"#.as_slice(),
+        ] {
+            assert_eq!(rollout_terminal(line, None), None);
+        }
     }
 
     #[test]
@@ -428,7 +480,53 @@ mod tests {
         )
         .unwrap();
         file.flush().unwrap();
-        assert_eq!(poll_entry(&mut entry).as_deref(), Some("turn-1"));
+        assert_eq!(
+            poll_entry(&mut entry),
+            Some(RolloutTerminal {
+                kind: RolloutTerminalKind::Interrupted,
+                turn_id: "turn-1".into(),
+            })
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reads_completed_turn_appended_after_registration() {
+        let root = std::env::temp_dir().join(format!(
+            "agent-cat-rollout-complete-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("rollout-test-session-1.jsonl");
+        std::fs::write(&path, b"").unwrap();
+        let path = validate_rollout_path(&path, "session-1").unwrap();
+        let mut entry = WatchEntry {
+            offset: 0,
+            path: path.clone(),
+            partial_line: Vec::new(),
+            discarding_line: false,
+            active_turn_id: Some("turn-1".into()),
+            terminal_turn_ids: VecDeque::new(),
+            active: true,
+        };
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(
+            file,
+            "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"task_complete\",\"turn_id\":\"turn-1\"}}}}"
+        )
+        .unwrap();
+        file.flush().unwrap();
+        assert_eq!(
+            poll_entry(&mut entry),
+            Some(RolloutTerminal {
+                kind: RolloutTerminalKind::Completed,
+                turn_id: "turn-1".into(),
+            })
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
