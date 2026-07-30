@@ -87,9 +87,9 @@ test.beforeEach(async ({ page }) => {
             case "hook_runtime_status": return {
               receiverRunning: true,
               socketPath: "agent-cat.sock",
-              lastEventAt: Date.now(),
-              lastEvent: "PermissionRequest",
-              lastEventIsTest: false,
+              verifiedAt: Date.now(),
+              lastRealEventAt: Date.now(),
+              lastRealEvent: "PermissionRequest",
             };
             case "autostart_status": return true;
             case "plugin:event|listen": return 1;

@@ -89,6 +89,7 @@ struct DecodedHookPayload {
 }
 
 static LATEST_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();
+static LATEST_REAL_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();
 static RECEIVER_RUNNING: AtomicBool = AtomicBool::new(false);
 static OWNS_SOCKET: AtomicBool = AtomicBool::new(false);
 const HEALTH_CHECK_PAYLOAD: &[u8] = b"agent-cat-hook-health-v1";
@@ -98,9 +99,9 @@ const HEALTH_CHECK_PAYLOAD: &[u8] = b"agent-cat-hook-health-v1";
 pub struct HookRuntimeStatus {
     pub receiver_running: bool,
     pub socket_path: String,
-    pub last_event_at: Option<u64>,
-    pub last_event: Option<String>,
-    pub last_event_is_test: bool,
+    pub verified_at: Option<u64>,
+    pub last_real_event_at: Option<u64>,
+    pub last_real_event: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -279,21 +280,16 @@ pub fn test_event(app: &AppHandle, event: &str) -> Result<(), String> {
 }
 
 pub fn runtime_status() -> HookRuntimeStatus {
-    let latest = latest_event();
+    let verified_at = crate::hook_verification::verified_at();
+    let latest_real = verified_at.and_then(|_| latest_real_event());
     HookRuntimeStatus {
         receiver_running: RECEIVER_RUNNING.load(Ordering::Acquire),
         socket_path: socket_path()
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_default(),
-        last_event_at: latest.as_ref().map(|event| event.timestamp),
-        last_event: latest.as_ref().map(|event| event.event.clone()),
-        last_event_is_test: latest
-            .as_ref()
-            .map(|event| {
-                event.session_id.starts_with("agent-cat-test")
-                    || event.session_id.starts_with("agent-cat-probe")
-            })
-            .unwrap_or(false),
+        verified_at,
+        last_real_event_at: latest_real.as_ref().map(|event| event.timestamp),
+        last_real_event: latest_real.as_ref().map(|event| event.event.clone()),
     }
 }
 
@@ -379,6 +375,12 @@ fn emit_event(app: &AppHandle, event: AgentEvent) {
     if let Ok(mut latest) = LATEST_EVENT.get_or_init(|| Mutex::new(None)).lock() {
         *latest = Some(event.clone());
     }
+    if is_real_codex_event(&event) {
+        if let Ok(mut latest) = LATEST_REAL_EVENT.get_or_init(|| Mutex::new(None)).lock() {
+            *latest = Some(event.clone());
+        }
+        let _ = crate::hook_verification::record(event.timestamp);
+    }
     let show_status = config::load()
         .map(|value| value.codex.hooks_enabled && value.codex.show_live_status)
         .unwrap_or(false);
@@ -388,7 +390,8 @@ fn emit_event(app: &AppHandle, event: AgentEvent) {
         }
     }
     let _ = app.emit_to("main", "codex-event", event.clone());
-    let _ = app.emit_to("status", "codex-event", event);
+    let _ = app.emit_to("status", "codex-event", event.clone());
+    let _ = app.emit_to("settings", "codex-event", event);
 }
 
 pub fn latest_event() -> Option<AgentEvent> {
@@ -397,6 +400,20 @@ pub fn latest_event() -> Option<AgentEvent> {
         .lock()
         .ok()
         .and_then(|event| event.clone())
+}
+
+fn latest_real_event() -> Option<AgentEvent> {
+    LATEST_REAL_EVENT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|event| event.clone())
+}
+
+fn is_real_codex_event(event: &AgentEvent) -> bool {
+    event.event != "HookParseError"
+        && !event.session_id.starts_with("agent-cat-test")
+        && !event.session_id.starts_with("agent-cat-probe")
 }
 
 fn build_event(
@@ -646,6 +663,27 @@ mod tests {
     fn health_check_does_not_emit_a_parse_error() {
         assert!(decode_wire_payload(HEALTH_CHECK_PAYLOAD).unwrap().is_none());
         assert!(decode_wire_payload(b"").is_err());
+    }
+
+    #[test]
+    fn only_real_codex_events_can_verify_the_integration() {
+        let event = |session_id: &str, name: &str| AgentEvent {
+            version: 1,
+            agent: "codex".into(),
+            session_id: session_id.into(),
+            event: name.into(),
+            timestamp: 42,
+            title: None,
+            tool_name: None,
+            turn_id: None,
+            session_source: None,
+            compact_trigger: None,
+        };
+
+        assert!(is_real_codex_event(&event("session-1", "SessionStart")));
+        assert!(!is_real_codex_event(&event("agent-cat-test", "Stop")));
+        assert!(!is_real_codex_event(&event("agent-cat-probe-1", "Stop")));
+        assert!(!is_real_codex_event(&event("unknown", "HookParseError")));
     }
 
     #[test]

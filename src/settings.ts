@@ -7,7 +7,7 @@ import type { AppConfig, CatalogResult, PetDescriptor, PetSource } from "./types
 import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgressPercent } from "./update-progress";
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; installedEvents: number; expectedEvents: number; message: string };
-type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; lastEventAt: number | null; lastEvent: string | null; lastEventIsTest: boolean };
+type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; verifiedAt: number | null; lastRealEventAt: number | null; lastRealEvent: string | null };
 type SettingsPage = "general" | "codex" | "about";
 
 const settingsPageCopy: Record<SettingsPage, { eyebrow: string; title: string; description: string }> = {
@@ -335,6 +335,7 @@ async function refreshHookStatus(): Promise<void> {
   const hookElement = document.querySelector<HTMLElement>("#hook-status")!;
   const receiverElement = document.querySelector<HTMLElement>("#receiver-status")!;
   const eventElement = document.querySelector<HTMLElement>("#last-event-status")!;
+  detail.hidden = false;
   try {
     const [status, runtime] = await Promise.all([
       invoke<HookStatus>("hook_status"),
@@ -348,9 +349,11 @@ async function refreshHookStatus(): Promise<void> {
     receiverElement.textContent = runtime.receiverRunning ? "运行中" : "未运行";
     receiverElement.title = runtime.socketPath;
     receiverElement.className = runtime.receiverRunning ? "status-ok" : "status-error";
-    eventElement.textContent = runtime.lastEventAt
-      ? `${eventLabels[runtime.lastEvent ?? ""] ?? runtime.lastEvent ?? "状态事件"} · ${relativeTime(runtime.lastEventAt)}${runtime.lastEventIsTest ? "（测试）" : ""}`
-      : "尚未收到";
+    eventElement.textContent = runtime.lastRealEventAt
+      ? `${eventLabels[runtime.lastRealEvent ?? ""] ?? runtime.lastRealEvent ?? "状态事件"} · ${relativeTime(runtime.lastRealEventAt)}`
+      : runtime.verifiedAt
+        ? "本次启动尚未收到"
+        : "尚未收到";
 
     if (!config.codex.hooksEnabled) {
       card.dataset.state = "paused";
@@ -367,16 +370,17 @@ async function refreshHookStatus(): Promise<void> {
       title.textContent = "状态接收器未运行";
       detail.textContent = "Hook 配置完整，但本地接收器不可用；请重启 Agent Cat 后重新测试。";
       badge.textContent = "需重启";
-    } else if (runtime.lastEventAt) {
+    } else if (runtime.verifiedAt) {
       card.dataset.state = "connected";
       title.textContent = "Codex 状态联动正常";
-      detail.textContent = runtime.lastEventIsTest ? "端到端测试已通过，正在等待真实 Codex 任务。" : "Agent Cat 已收到真实 Codex 状态事件。";
+      detail.textContent = "";
+      detail.hidden = true;
       badge.textContent = "已连接";
     } else {
-      card.dataset.state = "ready";
-      title.textContent = "Hook 已就绪，等待 Codex 事件";
-      detail.textContent = "可以开始一个 Codex 任务，或点击“重新测试”检查完整链路。";
-      badge.textContent = "已就绪";
+      card.dataset.state = "pending";
+      title.textContent = "Hook 已安装，等待验证";
+      detail.textContent = "请在 Codex 中审核并信任 Hook，然后开始一个任务完成验证。";
+      badge.textContent = "待验证";
     }
   } catch (error) {
     if (request !== hookRefreshRequest) return;
@@ -511,7 +515,7 @@ document.querySelector("#connect-codex")!.addEventListener("click", async (event
     await persist();
     await invoke<HookRuntimeStatus>("probe_hook");
     await refreshHookStatus();
-    showMessage("Codex 已连接，端到端测试通过");
+    showMessage("Hook 已安装，本地测试通过；等待真实 Codex 事件验证");
   } catch (error) {
     await refreshHookStatus();
     showMessage(String(error), true);
@@ -526,7 +530,7 @@ document.querySelector("#test-hook")!.addEventListener("click", async () => {
   try {
     await invoke<HookRuntimeStatus>("probe_hook");
     await refreshHookStatus();
-    showMessage("端到端 Hook 测试通过");
+    showMessage("本地 Hook 测试通过；验证状态保持不变");
   } catch (error) {
     await refreshHookStatus();
     showMessage(String(error), true);
@@ -548,6 +552,7 @@ void listen<{ source?: string }>("agent-cat-config-changed", async ({ payload })
   bindConfig();
 });
 void listen("agent-cat-autostart-changed", () => void refreshAutostart());
+void listen("codex-event", () => void refreshHookStatus());
 const healthTimer = window.setInterval(() => void refreshHookStatus(), 5_000);
 window.addEventListener("beforeunload", () => {
   window.clearInterval(healthTimer);

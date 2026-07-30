@@ -2,6 +2,7 @@ mod codex_source;
 mod config;
 mod hook_installer;
 mod hook_server;
+mod hook_verification;
 mod pet_catalog;
 mod pet_manifest;
 mod platform;
@@ -467,12 +468,27 @@ fn hook_status() -> Result<hook_installer::HookStatus, String> {
 
 #[tauri::command]
 fn install_hooks() -> Result<hook_installer::HookStatus, String> {
-    hook_installer::install()
+    install_hooks_shared()
+}
+
+fn install_hooks_shared() -> Result<hook_installer::HookStatus, String> {
+    let previous_fingerprint = hook_installer::verification_fingerprint()?;
+    let status = hook_installer::install()?;
+    if previous_fingerprint != hook_installer::verification_fingerprint()? {
+        hook_verification::clear()?;
+    }
+    Ok(status)
 }
 
 #[tauri::command]
 fn uninstall_hooks() -> Result<hook_installer::HookStatus, String> {
-    hook_installer::uninstall()
+    uninstall_hooks_shared()
+}
+
+fn uninstall_hooks_shared() -> Result<hook_installer::HookStatus, String> {
+    let status = hook_installer::uninstall()?;
+    hook_verification::clear()?;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -650,14 +666,14 @@ pub fn handle_cli() -> bool {
             true
         }
         Some("install-hooks") => {
-            if let Err(error) = hook_installer::install() {
+            if let Err(error) = install_hooks_shared() {
                 eprintln!("{error}");
                 std::process::exit(1);
             }
             true
         }
         Some("uninstall-hooks") => {
-            if let Err(error) = hook_installer::uninstall() {
+            if let Err(error) = uninstall_hooks_shared() {
                 eprintln!("{error}");
                 std::process::exit(1);
             }

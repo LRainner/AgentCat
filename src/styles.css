@@ -158,11 +158,11 @@ input[type="text"], input:not([type]), .inline-form input { min-width: 0; paddin
 .integration-meta small, .integration-meta strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .integration-meta small { margin-bottom: 3px; color: #7d8a8b; font-size: 9px; }
 .integration-meta strong { color: #3d5052; font-size: 11px; }
-.integration-card[data-state="connected"] .integration-dot,
-.integration-card[data-state="ready"] .integration-dot { background: #4d9b72; box-shadow: 0 0 0 4px #4d9b7220; }
-.integration-card[data-state="connected"] .integration-badge,
-.integration-card[data-state="ready"] .integration-badge { color: #247553; background: #dcefe4; }
+.integration-card[data-state="connected"] .integration-dot { background: #4d9b72; box-shadow: 0 0 0 4px #4d9b7220; }
+.integration-card[data-state="connected"] .integration-badge { color: #247553; background: #dcefe4; }
+.integration-card[data-state="pending"] .integration-dot,
 .integration-card[data-state="paused"] .integration-dot { background: #d49b46; box-shadow: 0 0 0 4px #d49b4620; }
+.integration-card[data-state="pending"] .integration-badge,
 .integration-card[data-state="paused"] .integration-badge { color: #8a5e1b; background: #f5e8d2; }
 .integration-card[data-state="error"] .integration-dot,
 .integration-card[data-state="setup"] .integration-dot { background: #bf5a52; box-shadow: 0 0 0 4px #bf5a5220; }
