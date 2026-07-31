@@ -478,10 +478,8 @@ fn pet_directory_info() -> Result<PetDirectoryInfo, String> {
 #[tauri::command]
 fn reveal_pet_directory() -> Result<(), String> {
     let value = default_pet_directory(&config::home_dir()?);
-    if !value.exists() {
-        fs::create_dir_all(&value)
-            .map_err(|error| format!("创建 {} 失败：{error}", value.display()))?;
-    }
+    fs::create_dir_all(&value)
+        .map_err(|error| format!("创建 {} 失败：{error}", value.display()))?;
     platform::reveal_in_file_manager(&value)
 }
 
