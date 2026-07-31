@@ -5,8 +5,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { AppConfig, CatalogResult, PetDescriptor, PetSource } from "./types";
 import {
-  hasUnseenUpdate,
-  markUpdateSeen,
+  hasAvailableUpdate,
   readUpdateState,
   recordUpdateCheck,
   UPDATE_STATE_EVENT,
@@ -68,7 +67,7 @@ async function initialize(): Promise<void> {
   document.querySelector<HTMLElement>("#current-version")!.textContent = `v${currentVersion}`;
   updateState = readUpdateState(localStorage, currentVersion);
   refreshUpdateIndicator();
-  if (activeSettingsPage === "about") acknowledgeKnownUpdate();
+  if (activeSettingsPage === "about") renderKnownUpdate();
   bindConfig();
   await Promise.all([refreshCatalog(), refreshHookStatus(), refreshAutostart()]);
 }
@@ -88,17 +87,15 @@ function showSettingsPage(page: SettingsPage, updateHash = true): void {
     panel.hidden = panel.dataset.settingsPanel !== page;
   }
   if (updateHash && window.location.hash !== `#${page}`) history.replaceState(null, "", `#${page}`);
-  if (page === "about" && currentVersion) acknowledgeKnownUpdate();
+  if (page === "about" && currentVersion) renderKnownUpdate();
 }
 
 function refreshUpdateIndicator(): void {
-  document.querySelector<HTMLElement>("#about-update-dot")!.hidden = !hasUnseenUpdate(updateState);
+  document.querySelector<HTMLElement>("#about-update-dot")!.hidden = !hasAvailableUpdate(updateState);
 }
 
-function acknowledgeKnownUpdate(): void {
+function renderKnownUpdate(): void {
   if (!updateState?.availableVersion) return;
-  updateState = markUpdateSeen(localStorage, updateState);
-  refreshUpdateIndicator();
   if (!pendingUpdate && !updateChecking) {
     const card = document.querySelector<HTMLElement>("#update-status-card")!;
     card.dataset.state = "ready";
@@ -112,7 +109,6 @@ function acknowledgeKnownUpdate(): void {
 
 async function publishUpdateState(availableVersion: string | null): Promise<void> {
   updateState = recordUpdateCheck(localStorage, currentVersion, availableVersion);
-  if (activeSettingsPage === "about") updateState = markUpdateSeen(localStorage, updateState);
   refreshUpdateIndicator();
   await emit(UPDATE_STATE_EVENT, updateState);
 }
@@ -217,6 +213,7 @@ async function installPendingUpdate(): Promise<void> {
     await update.install();
     installed = true;
     pendingUpdate = null;
+    await publishUpdateState(null).catch(() => undefined);
     await relaunch();
   } catch (error) {
     card.dataset.state = "error";
@@ -604,7 +601,7 @@ void listen<UpdateIndicatorState>(UPDATE_STATE_EVENT, ({ payload }) => {
   if (payload.checkedFromVersion !== currentVersion) return;
   updateState = payload;
   refreshUpdateIndicator();
-  if (activeSettingsPage === "about") acknowledgeKnownUpdate();
+  if (activeSettingsPage === "about") renderKnownUpdate();
 });
 const healthTimer = window.setInterval(() => void refreshHookStatus(), 5_000);
 window.addEventListener("beforeunload", () => {

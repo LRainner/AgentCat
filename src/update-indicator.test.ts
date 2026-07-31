@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  hasUnseenUpdate,
-  markUpdateSeen,
+  hasAvailableUpdate,
   nextUpdateCheckDelay,
   readUpdateState,
   recordUpdateCheck,
@@ -19,23 +18,18 @@ class MemoryStorage implements Storage {
 }
 
 describe("update indicator state", () => {
-  it("shows a newly discovered version until it is seen", () => {
+  it("shows a discovered version until the app is updated", () => {
     const storage = new MemoryStorage();
     const discovered = recordUpdateCheck(storage, "1.4.0", "1.5.0", 1_000);
-    expect(hasUnseenUpdate(discovered)).toBe(true);
-
-    const seen = markUpdateSeen(storage, discovered);
-    expect(hasUnseenUpdate(seen)).toBe(false);
-    expect(readUpdateState(storage, "1.4.0")).toEqual(seen);
+    expect(hasAvailableUpdate(discovered)).toBe(true);
+    expect(hasAvailableUpdate({ ...discovered, seenVersion: "1.5.0" })).toBe(true);
+    expect(readUpdateState(storage, "1.5.0")).toBeNull();
   });
 
-  it("shows the indicator again when a different version is discovered", () => {
+  it("hides the indicator when no update is available", () => {
     const storage = new MemoryStorage();
-    const first = markUpdateSeen(storage, recordUpdateCheck(storage, "1.4.0", "1.5.0", 1_000));
-    const second = recordUpdateCheck(storage, "1.4.0", "1.6.0", 2_000);
-    expect(first.seenVersion).toBe("1.5.0");
-    expect(second.seenVersion).toBeNull();
-    expect(hasUnseenUpdate(second)).toBe(true);
+    const state = recordUpdateCheck(storage, "1.4.0", null, 1_000);
+    expect(hasAvailableUpdate(state)).toBe(false);
   });
 
   it("invalidates saved state after the app version changes", () => {

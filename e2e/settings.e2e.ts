@@ -111,7 +111,7 @@ test("switches between the three settings pages", async ({ page }) => {
   await expect(page.locator("#settings-page-title")).toHaveText("关于");
 });
 
-test("shows a persisted update indicator until the about page is viewed", async ({ page }) => {
+test("keeps a persisted update indicator visible while the update is available", async ({ page }) => {
   await page.goto("/settings.html");
   await page.evaluate(() => {
     localStorage.setItem("agent-cat-update-state", JSON.stringify({
@@ -126,7 +126,7 @@ test("shows a persisted update indicator until the about page is viewed", async 
 
   await expect(page.locator("#about-update-dot")).toBeVisible();
   await page.getByRole("tab", { name: /关于/ }).click();
-  await expect(page.locator("#about-update-dot")).toBeHidden();
+  await expect(page.locator("#about-update-dot")).toBeVisible();
   await expect(page.locator("#update-status-title")).toHaveText("发现新版本 v1.2.0");
   await expect(page.getByRole("button", { name: "下载更新" })).toBeVisible();
 });
@@ -171,10 +171,12 @@ test("downloads a signed update and offers installation", async ({ page }) => {
   await expect(page.locator("#update-status-title")).toHaveText("v1.2.0 已准备好");
   await expect(page.locator("#update-progress-bar")).toHaveAttribute("style", /width: 100%/);
   await expect(page.getByRole("button", { name: "检查更新" })).toBeHidden();
+  await expect(page.locator("#about-update-dot")).toBeVisible();
   await page.getByRole("button", { name: "安装并重启" }).click();
   await expect.poll(() => page.evaluate(() => (
     window as unknown as { __TAURI_TEST_COMMANDS__: string[] }
   ).__TAURI_TEST_COMMANDS__)).toContain("plugin:updater|install");
+  await expect(page.locator("#about-update-dot")).toBeHidden();
 });
 
 test("keeps the update status tile still while the progress ring spins", async ({ page }) => {
