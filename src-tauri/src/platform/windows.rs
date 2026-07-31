@@ -2,6 +2,7 @@ use std::{iter::once, os::windows::ffi::OsStrExt, path::Path};
 use windows_sys::Win32::Storage::FileSystem::{
     MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
 };
+use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
 
 pub fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(once(0)).collect();
@@ -25,9 +26,24 @@ pub fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
 }
 
 pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
-    std::process::Command::new("explorer.exe")
-        .arg(path)
-        .spawn()
-        .map_err(|error| format!("无法在文件资源管理器中打开：{error}"))?;
-    Ok(())
+    let operation: Vec<u16> = "open".encode_utf16().chain(once(0)).collect();
+    let path: Vec<u16> = path.as_os_str().encode_wide().chain(once(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    let status = result as isize;
+    if status <= 32 {
+        Err(format!(
+            "无法在文件资源管理器中打开（ShellExecuteW 错误码 {status}）"
+        ))
+    } else {
+        Ok(())
+    }
 }

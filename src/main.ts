@@ -206,6 +206,7 @@ void getCurrentWindow().onMoved(({ payload }) => {
 void listen<AgentEvent>("codex-event", ({ payload }) => {
   if (config?.codex.hooksEnabled) reactions.setAgentEvent(payload);
 });
+void listen("agent-cat-pet-state-reset", () => reactions.reset());
 
 void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
   void applyConfig(payload).catch((error) => { errorBox.textContent = String(error); });

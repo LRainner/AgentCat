@@ -406,6 +406,7 @@ fn reset_main_position(app: tauri::AppHandle) -> Result<AppConfig, String> {
     value.window.x = Some(x);
     value.window.y = Some(y);
     config::save(&value)?;
+    let _ = app.emit_to("main", "agent-cat-pet-state-reset", ());
     Ok(value)
 }
 
@@ -447,13 +448,36 @@ async fn show_window(app: tauri::AppHandle, kind: String) -> Result<(), String> 
     show_aux_window(&app, &kind)
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PetDirectoryInfo {
+    default_path: String,
+    example_path: String,
+}
+
+fn default_pet_directory(home: &Path) -> PathBuf {
+    home.join(".codex").join("pets")
+}
+
+fn pet_directory_info_for_home(home: &Path) -> PetDirectoryInfo {
+    PetDirectoryInfo {
+        default_path: default_pet_directory(home).to_string_lossy().to_string(),
+        example_path: home
+            .join("Downloads")
+            .join("codex-pets")
+            .to_string_lossy()
+            .to_string(),
+    }
+}
+
 #[tauri::command]
-fn reveal_path(path: String) -> Result<(), String> {
-    let value = if path == "~/.codex/pets" {
-        config::home_dir()?.join(".codex/pets")
-    } else {
-        PathBuf::from(path)
-    };
+fn pet_directory_info() -> Result<PetDirectoryInfo, String> {
+    Ok(pet_directory_info_for_home(&config::home_dir()?))
+}
+
+#[tauri::command]
+fn reveal_pet_directory() -> Result<(), String> {
+    let value = default_pet_directory(&config::home_dir()?);
     if !value.exists() {
         fs::create_dir_all(&value)
             .map_err(|error| format!("创建 {} 失败：{error}", value.display()))?;
@@ -580,9 +604,6 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
         None::<&str>,
     )
     .map_err(|error| error.to_string())?;
-    let reset_position =
-        MenuItem::with_id(app, "reset-position", "恢复默认位置", true, None::<&str>)
-            .map_err(|error| error.to_string())?;
     let quit = MenuItem::with_id(app, "quit", "退出 Agent Cat", true, None::<&str>)
         .map_err(|error| error.to_string())?;
     let separator_one = PredefinedMenuItem::separator(app).map_err(|error| error.to_string())?;
@@ -597,7 +618,6 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
             &mouse_passthrough,
             &lock_position,
             &launch_at_login,
-            &reset_position,
             &separator_two,
             &quit,
         ],
@@ -631,10 +651,6 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
                 if let Ok(enabled) = app.autolaunch().is_enabled() {
                     let _ = set_autostart(app.clone(), !enabled);
                 }
-            }
-            "reset-position" => {
-                let _ = reset_main_position(app.clone());
-                let _ = app.emit("agent-cat-config-changed", ());
             }
             "quit" => {
                 hook_server::cleanup();
@@ -711,7 +727,8 @@ pub fn run() {
             autostart_status,
             set_autostart,
             show_window,
-            reveal_path,
+            pet_directory_info,
+            reveal_pet_directory,
             hook_status,
             install_hooks,
             uninstall_hooks,
@@ -762,4 +779,29 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pet_directory_info_uses_native_paths_under_the_home_directory() {
+        let home = Path::new("test-home");
+        let info = pet_directory_info_for_home(home);
+        assert_eq!(
+            info.default_path,
+            home.join(".codex")
+                .join("pets")
+                .to_string_lossy()
+                .to_string()
+        );
+        assert_eq!(
+            info.example_path,
+            home.join("Downloads")
+                .join("codex-pets")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
 }

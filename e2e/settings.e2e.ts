@@ -34,7 +34,9 @@ test.beforeEach(async ({ page }) => {
     let callbackId = 0;
     const callbacks = new Map<number, (...args: unknown[]) => unknown>();
     const commandLog: string[] = [];
+    const failedCommands = new Set<string>();
     Object.defineProperty(window, "__TAURI_TEST_COMMANDS__", { value: commandLog });
+    Object.defineProperty(window, "__TAURI_TEST_FAILED_COMMANDS__", { value: failedCommands });
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       value: {
         transformCallback(callback: (...args: unknown[]) => unknown) {
@@ -47,6 +49,7 @@ test.beforeEach(async ({ page }) => {
         },
         async invoke(command: string, args: Record<string, unknown> = {}) {
           commandLog.push(command);
+          if (failedCommands.has(command)) throw new Error(`${command} failed`);
           switch (command) {
             case "plugin:app|version": return "1.1.0";
             case "plugin:updater|check": return {
@@ -69,6 +72,10 @@ test.beforeEach(async ({ page }) => {
             case "plugin:process|restart": return null;
             case "plugin:resources|close": return null;
             case "get_config": return structuredClone(mockConfig);
+            case "pet_directory_info": return {
+              defaultPath: "C:\\Users\\Tester\\.codex\\pets",
+              examplePath: "C:\\Users\\Tester\\Downloads\\codex-pets",
+            };
             case "scan_pets": return { pets: [], diagnostics: [], codexBundles: [] };
             case "hook_status": return {
               path: "C:\\Users\\Tester\\.codex\\config.toml",
@@ -109,6 +116,29 @@ test("switches between the three settings pages", async ({ page }) => {
   await expect(page).toHaveURL(/#about$/);
   await expect(page.locator('[data-settings-panel="about"]')).toBeVisible();
   await expect(page.locator("#settings-page-title")).toHaveText("关于");
+});
+
+test("shows native pet directory paths and opens the default directory", async ({ page }) => {
+  await page.goto("/settings.html");
+  await expect(page.locator("#extra-directory")).toHaveAttribute(
+    "placeholder",
+    "C:\\Users\\Tester\\Downloads\\codex-pets",
+  );
+  const open = page.getByRole("button", { name: "打开宠物目录" });
+  await expect(open).toHaveAttribute("title", "C:\\Users\\Tester\\.codex\\pets");
+  await open.click();
+  await expect.poll(() => page.evaluate(() => (
+    window as unknown as { __TAURI_TEST_COMMANDS__: string[] }
+  ).__TAURI_TEST_COMMANDS__)).toContain("reveal_pet_directory");
+});
+
+test("shows an error when the default pet directory cannot be opened", async ({ page }) => {
+  await page.goto("/settings.html");
+  await page.evaluate(() => (
+    window as unknown as { __TAURI_TEST_FAILED_COMMANDS__: Set<string> }
+  ).__TAURI_TEST_FAILED_COMMANDS__.add("reveal_pet_directory"));
+  await page.getByRole("button", { name: "打开宠物目录" }).click();
+  await expect(page.locator("#settings-message")).toContainText("无法打开宠物目录");
 });
 
 test("keeps a persisted update indicator visible while the update is available", async ({ page }) => {
