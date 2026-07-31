@@ -52,15 +52,8 @@ export function recordUpdateCheck(
   return state;
 }
 
-export function markUpdateSeen(storage: Storage, state: UpdateIndicatorState): UpdateIndicatorState {
-  if (!state.availableVersion || state.seenVersion === state.availableVersion) return state;
-  const next = { ...state, seenVersion: state.availableVersion };
-  try { storage.setItem(UPDATE_STATE_KEY, JSON.stringify(next)); } catch { /* persistence is best effort */ }
-  return next;
-}
-
-export function hasUnseenUpdate(state: UpdateIndicatorState | null): boolean {
-  return Boolean(state?.availableVersion && state.seenVersion !== state.availableVersion);
+export function hasAvailableUpdate(state: UpdateIndicatorState | null): boolean {
+  return Boolean(state?.availableVersion);
 }
 
 export function nextUpdateCheckDelay(state: UpdateIndicatorState | null, now = Date.now()): number {
