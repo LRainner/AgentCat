@@ -15,6 +15,7 @@ import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgress
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; installedEvents: number; expectedEvents: number; message: string };
 type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; verifiedAt: number | null; lastRealEventAt: number | null; lastRealEvent: string | null };
+type PetDirectoryInfo = { defaultPath: string; examplePath: string };
 type SettingsPage = "general" | "codex" | "about";
 
 const settingsPageCopy: Record<SettingsPage, { eyebrow: string; title: string; description: string }> = {
@@ -57,13 +58,20 @@ let updateChecking = false;
 let updateInstalling = false;
 let activeSettingsPage: SettingsPage = "general";
 let updateState: UpdateIndicatorState | null = null;
+let petDirectoryInfo: PetDirectoryInfo;
 const previewImageCache = new Map<string, Promise<string>>();
 const configEventSource = `settings-${crypto.randomUUID()}`;
 
 function input<T extends HTMLInputElement>(id: string): T { return document.querySelector<T>(`#${id}`)!; }
 
 async function initialize(): Promise<void> {
-  [config, currentVersion] = await Promise.all([invoke<AppConfig>("get_config"), getVersion()]);
+  [config, currentVersion, petDirectoryInfo] = await Promise.all([
+    invoke<AppConfig>("get_config"),
+    getVersion(),
+    invoke<PetDirectoryInfo>("pet_directory_info"),
+  ]);
+  input("extra-directory").placeholder = petDirectoryInfo.examplePath;
+  document.querySelector<HTMLButtonElement>("#open-codex-pets")!.title = petDirectoryInfo.defaultPath;
   document.querySelector<HTMLElement>("#current-version")!.textContent = `v${currentVersion}`;
   updateState = readUpdateState(localStorage, currentVersion);
   refreshUpdateIndicator();
@@ -545,7 +553,13 @@ document.querySelector("#add-directory")!.addEventListener("click", async () => 
   renderExtraDirectories();
   await refreshCatalog();
 });
-document.querySelector("#open-codex-pets")!.addEventListener("click", () => void invoke("reveal_path", { path: "~/.codex/pets" }));
+document.querySelector("#open-codex-pets")!.addEventListener("click", async () => {
+  try {
+    await invoke("reveal_pet_directory");
+  } catch (error) {
+    showMessage(`无法打开宠物目录：${String(error)}`, true);
+  }
+});
 document.querySelector("#reset-position")!.addEventListener("click", async () => { config = await invoke<AppConfig>("reset_main_position"); bindConfig(); showMessage("位置已恢复"); });
 document.querySelector("#connect-codex")!.addEventListener("click", async (event) => {
   const button = event.currentTarget as HTMLButtonElement;
