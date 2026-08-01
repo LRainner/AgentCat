@@ -1,6 +1,7 @@
 import type { AnimationName } from "./animation-table";
 import { PetRenderer } from "./pet-renderer";
 import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
+import { agentSessionKey } from "./agents";
 import type { AgentEvent } from "./types";
 
 const STALLED_RETENTION_MS = 10 * 60_000;
@@ -26,9 +27,10 @@ export class ReactionController {
   constructor(private readonly renderer: PetRenderer) {}
 
   setAgentEvent(payload: AgentEvent): void {
+    const sessionKey = agentSessionKey(payload);
     const eventKey = agentEventKey(payload);
     if (this.terminalEvents.shouldIgnore(payload, eventKey)) return;
-    const existing = this.sessions.get(payload.sessionId);
+    const existing = this.sessions.get(sessionKey);
     const session = existing ?? {
       base: "idle",
       compactResumeBase: null,
@@ -40,7 +42,7 @@ export class ReactionController {
     if (payload.timestamp > session.latestEventTimestamp) session.latestEventKeys.clear();
     session.latestEventTimestamp = Math.max(session.latestEventTimestamp, payload.timestamp);
     session.latestEventKeys.add(eventKey);
-    this.sessions.set(payload.sessionId, session);
+    this.sessions.set(sessionKey, session);
     this.terminalEvents.recordActivity(payload);
 
     let reaction: "start" | "complete" | "failed" | null = null;
@@ -99,9 +101,9 @@ export class ReactionController {
     }
     if (session.base === "idle") {
       this.clearSessionTimer(session);
-      this.sessions.delete(payload.sessionId);
+      this.sessions.delete(sessionKey);
     } else {
-      this.armInactivityTimeout(payload.sessionId, session);
+      this.armInactivityTimeout(sessionKey, session);
     }
     this.base = this.aggregateBase();
     if (this.base === "waiting" || this.base === "working") {
@@ -125,8 +127,9 @@ export class ReactionController {
   }
 
   setDragging(direction: "left" | "right" | null): void {
+    if (this.dragging === direction) return;
     this.dragging = direction;
-    this.render(true);
+    this.render();
   }
 
   setLookDirection(direction: number | null): void {
@@ -150,6 +153,7 @@ export class ReactionController {
     this.sessions.clear();
     this.terminalEvents.clear();
     this.base = "idle";
+    this.dragging = null;
     this.queue = [];
     this.playingReaction = false;
   }
@@ -162,7 +166,9 @@ export class ReactionController {
 
   private render(force = false): void {
     if (this.dragging) {
-      this.renderer.play(this.dragging === "right" ? "runningRight" : "runningLeft", { force });
+      // Dragging is the visual override. Agent updates may change the state below it,
+      // but must never force the current drag animation back to its first frame.
+      this.renderer.play(this.dragging === "right" ? "runningRight" : "runningLeft");
       return;
     }
     if (this.base === "waiting") { this.renderer.play("waiting", { force }); return; }

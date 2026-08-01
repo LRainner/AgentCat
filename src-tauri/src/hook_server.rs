@@ -1,4 +1,5 @@
-use crate::config;
+pub use crate::agent_events::AgentEvent;
+use crate::{agent_events, config};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
@@ -10,7 +11,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 
 mod rollout_observer;
 #[cfg(unix)]
@@ -53,26 +54,6 @@ const DISPLAY_EVENTS: [&str; 13] = [
     "HookParseError",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentEvent {
-    pub version: u8,
-    pub agent: String,
-    pub session_id: String,
-    pub event: String,
-    pub timestamp: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub turn_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_source: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub compact_trigger: Option<String>,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HookWirePayload {
@@ -88,7 +69,6 @@ struct DecodedHookPayload {
     transcript_path: Option<PathBuf>,
 }
 
-static LATEST_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();
 static LATEST_REAL_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();
 static RECEIVER_RUNNING: AtomicBool = AtomicBool::new(false);
 static OWNS_SOCKET: AtomicBool = AtomicBool::new(false);
@@ -372,34 +352,17 @@ fn emit_parse_error(app: &AppHandle) {
 }
 
 fn emit_event(app: &AppHandle, event: AgentEvent) {
-    if let Ok(mut latest) = LATEST_EVENT.get_or_init(|| Mutex::new(None)).lock() {
-        *latest = Some(event.clone());
-    }
     if is_real_codex_event(&event) {
         if let Ok(mut latest) = LATEST_REAL_EVENT.get_or_init(|| Mutex::new(None)).lock() {
             *latest = Some(event.clone());
         }
         let _ = crate::hook_verification::record(event.timestamp);
     }
-    let show_status = config::load()
-        .map(|value| value.codex.hooks_enabled && value.codex.show_live_status)
-        .unwrap_or(false);
-    if show_status {
-        if let Some(window) = app.get_webview_window("status") {
-            let _ = window.show();
-        }
-    }
-    let _ = app.emit_to("main", "codex-event", event.clone());
-    let _ = app.emit_to("status", "codex-event", event.clone());
-    let _ = app.emit_to("settings", "codex-event", event);
+    agent_events::publish(app, event);
 }
 
 pub fn latest_event() -> Option<AgentEvent> {
-    LATEST_EVENT
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .ok()
-        .and_then(|event| event.clone())
+    agent_events::latest()
 }
 
 fn latest_real_event() -> Option<AgentEvent> {

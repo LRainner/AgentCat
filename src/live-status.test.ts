@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { LiveStatusController, sanitizeStatusText } from "./live-status";
 import type { AgentEvent, AgentLiveStatus } from "./types";
+import type { AgentEventName } from "./agents";
 
-function event(name: string, timestamp: number, extras: Partial<AgentEvent> = {}): AgentEvent {
+function event(name: AgentEventName, timestamp: number, extras: Partial<AgentEvent> = {}): AgentEvent {
   return { version: 1, agent: "codex", sessionId: "session-1", event: name, timestamp, ...extras };
 }
 
@@ -72,6 +73,20 @@ describe("LiveStatusController", () => {
     expect(updates.at(-1)?.map(({ sessionId }) => sessionId)).toEqual(["session-2", "session-1"]);
     controller.setAgentEvent(event("PreToolUse", 11, { toolName: "Bash" }));
     expect(updates.at(-1)?.map(({ sessionId }) => sessionId)).toEqual(["session-1", "session-2"]);
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("keeps identical session ids isolated across agents", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("PreToolUse", 1));
+    controller.setAgentEvent(event("PermissionRequest", 2, { agent: "second-agent" }));
+    expect(updates.at(-1)).toHaveLength(2);
+    expect(updates.at(-1)?.map(({ agent }) => agent)).toEqual(["second-agent", "codex"]);
+    controller.setAgentEvent(event("Stop", 3));
+    expect(updates.at(-1)?.find(({ agent }) => agent === "second-agent")?.phase).toBe("waiting");
     controller.dispose();
     vi.useRealTimers();
   });

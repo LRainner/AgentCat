@@ -2,7 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LiveStatusController } from "./live-status";
-import type { AgentEvent, AgentLiveStatus, AppConfig } from "./types";
+import type { AgentLiveStatus, AppConfig } from "./types";
+import { agentEventKey } from "./terminal-event-ledger";
+import {
+  AGENT_EVENT_CHANNEL,
+  agentRuntimeSignature,
+  normalizeAgentEvent,
+  showsAgentLiveStatus,
+  showsAgentTaskSummary,
+  type RawAgentEvent,
+} from "./agents";
 
 const statusWindow = getCurrentWindow();
 const shell = document.querySelector<HTMLElement>("#status-shell")!;
@@ -23,7 +32,7 @@ function contentHeight(count: number): number {
 }
 
 async function render(statuses: AgentLiveStatus[]): Promise<void> {
-  if (!statuses.length || !config?.codex.hooksEnabled || !config.codex.showLiveStatus) {
+  if (!statuses.length) {
     expanded = false;
     shell.hidden = true;
     await statusWindow.hide();
@@ -32,18 +41,19 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
 
   if (statuses.length === 1) expanded = false;
   const existingCards = new Map(
-    [...stack.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionId ?? "", card]),
+    [...stack.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionKey ?? "", card]),
   );
-  const activeIds = new Set(statuses.map(({ sessionId }) => sessionId));
-  for (const [sessionId, card] of existingCards) {
-    if (!activeIds.has(sessionId)) card.remove();
+  const activeIds = new Set(statuses.map(({ sessionKey }) => sessionKey));
+  for (const [sessionKey, card] of existingCards) {
+    if (!activeIds.has(sessionKey)) card.remove();
   }
 
   statuses.forEach((status, index) => {
-    let card = existingCards.get(status.sessionId);
+    let card = existingCards.get(status.sessionKey);
     if (!card) {
       card = document.createElement("article");
       card.className = "status-card";
+      card.dataset.sessionKey = status.sessionKey;
       card.dataset.sessionId = status.sessionId;
       card.setAttribute("role", "listitem");
       card.innerHTML = `
@@ -61,14 +71,16 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
     card.style.setProperty("--stack-expanded-y", `${-index * EXPANDED_OFFSET}px`);
     card.style.setProperty("--stack-scale", String(Math.max(0.94, 1 - index * 0.012)));
     card.style.zIndex = String(statuses.length - index);
-    card.querySelector<HTMLElement>(".status-title")!.textContent = config.codex.showTaskSummary ? status.title : "Codex";
+    card.querySelector<HTMLElement>(".status-title")!.textContent = showsAgentTaskSummary(config, status.agent)
+      ? status.title
+      : status.agentName;
     card.querySelector<HTMLElement>(".status-detail")!.textContent = status.detail;
   });
 
   shell.dataset.expanded = String(expanded);
   toggle.hidden = statuses.length < 2;
   toggle.setAttribute("aria-expanded", String(expanded));
-  toggle.setAttribute("aria-label", `${statuses.length} 个 Codex 会话，点击${expanded ? "收起" : "展开"}`);
+  toggle.setAttribute("aria-label", `${statuses.length} 个 Agent 会话，点击${expanded ? "收起" : "展开"}`);
   const height = contentHeight(statuses.length);
   shell.style.setProperty("--content-height", `${height}px`);
   shell.hidden = false;
@@ -85,11 +97,13 @@ function queueRender(statuses = controller.getStatuses()): Promise<void> {
 
 const controller = new LiveStatusController((statuses) => queueRender(statuses));
 
-function acceptEvent(payload: AgentEvent): void {
-  const key = [payload.sessionId, payload.turnId ?? "", payload.event, payload.timestamp, payload.title ?? "", payload.toolName ?? "", payload.sessionSource ?? "", payload.compactTrigger ?? ""].join(":");
+function acceptEvent(payload: RawAgentEvent): void {
+  const event = normalizeAgentEvent(payload);
+  if (!event) return;
+  const key = agentEventKey(event);
   if (key === lastEventKey) return;
   lastEventKey = key;
-  if (config?.codex.hooksEnabled && config.codex.showLiveStatus) controller.setAgentEvent(payload);
+  if (config && showsAgentLiveStatus(config, event.agent)) controller.setAgentEvent(event);
 }
 
 async function loadConfig(): Promise<void> {
@@ -98,10 +112,10 @@ async function loadConfig(): Promise<void> {
 }
 
 function applyConfig(next: AppConfig): void {
-  const wasEnabled = config?.codex.hooksEnabled && config.codex.showLiveStatus;
-  const isEnabled = next.codex.hooksEnabled && next.codex.showLiveStatus;
+  const previousSignature = config ? agentRuntimeSignature(config) : null;
+  const nextSignature = agentRuntimeSignature(next);
   config = next;
-  if (wasEnabled !== undefined && wasEnabled !== isEnabled) {
+  if (previousSignature !== null && previousSignature !== nextSignature) {
     lastEventKey = "";
     controller.reset();
   }
@@ -113,7 +127,7 @@ function applyConfigStyles(): void {
   shell.style.setProperty("--bubble-opacity", String(Math.min(1, Math.max(0.2, config.codex.bubbleOpacity))));
 }
 
-void listen<AgentEvent>("codex-event", ({ payload }) => {
+void listen<RawAgentEvent>(AGENT_EVENT_CHANNEL, ({ payload }) => {
   acceptEvent(payload);
 });
 void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
@@ -130,7 +144,7 @@ toggle.addEventListener("click", () => {
 void loadConfig();
 window.setInterval(async () => {
   try {
-    const event = await invoke<AgentEvent | null>("get_live_event");
+    const event = await invoke<RawAgentEvent | null>("get_live_event");
     if (event) acceptEvent(event);
   } catch { /* Event push remains the fast path if polling is unavailable. */ }
 }, 350);

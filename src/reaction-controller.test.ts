@@ -127,6 +127,55 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
+  it("keeps identical session ids isolated across agents", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "shared", event: "PreToolUse", timestamp: 1 });
+    controller.setAgentEvent({ version: 1, agent: "second-agent", sessionId: "shared", event: "PreToolUse", timestamp: 2 });
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "shared", event: "Stop", timestamp: 3 });
+    expect(calls.at(-1)).toBe("running");
+    expect(calls).not.toContain("review");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("reset clears a stuck dragging animation", () => {
+    const { calls, controller } = harness();
+    controller.setDragging("right");
+    controller.reset();
+    expect(calls).toEqual(["runningRight", "idle"]);
+  });
+
+  it("does not restart a dragging animation when its direction is unchanged", () => {
+    const { calls, controller } = harness();
+    controller.setDragging("right");
+    controller.setDragging("right");
+    controller.setDragging("right");
+    expect(calls).toEqual(["runningRight"]);
+  });
+
+  it("does not let agent updates restart the active drag animation", () => {
+    let playbackKey = "";
+    let restarts = 0;
+    const renderer = {
+      play(name: AnimationName, options?: { force?: boolean }) {
+        if (options?.force || playbackKey !== name) {
+          playbackKey = name;
+          restarts += 1;
+        }
+      },
+      look() {},
+    } as unknown as PetRenderer;
+    const controller = new ReactionController(renderer);
+    controller.setDragging("right");
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "UserPromptSubmit", timestamp: 1 });
+    controller.setAgentEvent({ version: 1, agent: "codex", sessionId: "s", event: "PreToolUse", timestamp: 2 });
+    expect(restarts).toBe(1);
+    controller.setDragging(null);
+    expect(restarts).toBe(2);
+    controller.dispose();
+  });
+
   it("keeps inactive sessions so later activity can recover them", () => {
     vi.useFakeTimers();
     const { controller } = harness();

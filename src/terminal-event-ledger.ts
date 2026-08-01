@@ -1,4 +1,5 @@
 import type { AgentEvent } from "./types";
+import { agentSessionKey } from "./agents";
 
 export const MAX_TERMINAL_SESSIONS = 128;
 export const MAX_TERMINAL_TURNS = 128;
@@ -12,6 +13,7 @@ type TerminalSession = {
 
 export function agentEventKey(payload: AgentEvent): string {
   return [
+    payload.agent,
     payload.sessionId,
     payload.turnId ?? "",
     payload.event,
@@ -29,11 +31,12 @@ export class TerminalEventLedger {
   private readonly activeTurns = new Map<string, string>();
 
   shouldIgnore(payload: AgentEvent, eventKey = agentEventKey(payload)): boolean {
-    const terminalSession = this.sessions.get(payload.sessionId);
+    const sessionKey = agentSessionKey(payload);
+    const terminalSession = this.sessions.get(sessionKey);
     const startsSession = payload.event === "SessionStart" && payload.sessionSource !== "compact";
     const startsTurn = payload.event === "UserPromptSubmit" && payload.turnId !== undefined;
     const terminalTurn = payload.turnId
-      ? this.turns.has(this.turnKey(payload.sessionId, payload.turnId))
+      ? this.turns.has(this.turnKey(sessionKey, payload.turnId))
       : false;
     if (terminalSession?.ended) {
       if (payload.timestamp < terminalSession.latestTimestamp) return true;
@@ -41,7 +44,7 @@ export class TerminalEventLedger {
       return true;
     }
     if (payload.event !== "SessionEnd" && terminalTurn) return true;
-    const activeTurn = this.activeTurns.get(payload.sessionId);
+    const activeTurn = this.activeTurns.get(sessionKey);
     if (
       payload.turnId
       && activeTurn
@@ -56,40 +59,43 @@ export class TerminalEventLedger {
   }
 
   recordActivity(payload: AgentEvent): void {
+    const sessionKey = agentSessionKey(payload);
     if (payload.event === "SessionStart" && payload.sessionSource !== "compact") {
-      this.sessions.delete(payload.sessionId);
-      this.activeTurns.delete(payload.sessionId);
+      this.sessions.delete(sessionKey);
+      this.activeTurns.delete(sessionKey);
       if (payload.turnId) {
-        this.turns.delete(this.turnKey(payload.sessionId, payload.turnId));
-        this.rememberActiveTurn(payload.sessionId, payload.turnId);
+        this.turns.delete(this.turnKey(sessionKey, payload.turnId));
+        this.rememberActiveTurn(sessionKey, payload.turnId);
       }
       return;
     }
     if (payload.event === "UserPromptSubmit") {
-      this.sessions.delete(payload.sessionId);
-      if (payload.turnId) this.rememberActiveTurn(payload.sessionId, payload.turnId);
+      this.sessions.delete(sessionKey);
+      if (payload.turnId) this.rememberActiveTurn(sessionKey, payload.turnId);
       return;
     }
-    if (payload.turnId && !this.activeTurns.has(payload.sessionId)) {
-      this.rememberActiveTurn(payload.sessionId, payload.turnId);
+    if (payload.turnId && !this.activeTurns.has(sessionKey)) {
+      this.rememberActiveTurn(sessionKey, payload.turnId);
     }
   }
 
   recordTurn(payload: AgentEvent, eventKey = agentEventKey(payload)): void {
+    const sessionKey = agentSessionKey(payload);
     if (payload.turnId) {
-      this.remember(this.turns, this.turnKey(payload.sessionId, payload.turnId), true, MAX_TERMINAL_TURNS);
-      if (this.activeTurns.get(payload.sessionId) === payload.turnId) {
-        this.activeTurns.delete(payload.sessionId);
+      this.remember(this.turns, this.turnKey(sessionKey, payload.turnId), true, MAX_TERMINAL_TURNS);
+      if (this.activeTurns.get(sessionKey) === payload.turnId) {
+        this.activeTurns.delete(sessionKey);
       }
     }
     this.recordSession(payload, eventKey, false);
   }
 
   recordSessionEnd(payload: AgentEvent, eventKey = agentEventKey(payload)): void {
+    const sessionKey = agentSessionKey(payload);
     if (payload.turnId) {
-      this.remember(this.turns, this.turnKey(payload.sessionId, payload.turnId), true, MAX_TERMINAL_TURNS);
+      this.remember(this.turns, this.turnKey(sessionKey, payload.turnId), true, MAX_TERMINAL_TURNS);
     }
-    this.activeTurns.delete(payload.sessionId);
+    this.activeTurns.delete(sessionKey);
     this.recordSession(payload, eventKey, true);
   }
 
@@ -100,7 +106,8 @@ export class TerminalEventLedger {
   }
 
   private recordSession(payload: AgentEvent, eventKey: string, ended: boolean): void {
-    const existing = this.sessions.get(payload.sessionId);
+    const sessionKey = agentSessionKey(payload);
+    const existing = this.sessions.get(sessionKey);
     const eventKeys = payload.timestamp === existing?.latestTimestamp
       ? existing.eventKeys
       : new Set<string>();
@@ -110,7 +117,7 @@ export class TerminalEventLedger {
       latestTimestamp: Math.max(payload.timestamp, existing?.latestTimestamp ?? Number.NEGATIVE_INFINITY),
       eventKeys,
     };
-    this.remember(this.sessions, payload.sessionId, terminal, MAX_TERMINAL_SESSIONS);
+    this.remember(this.sessions, sessionKey, terminal, MAX_TERMINAL_SESSIONS);
   }
 
   private remember<T>(map: Map<string, T>, key: string, value: T, limit: number): void {
@@ -123,8 +130,8 @@ export class TerminalEventLedger {
     }
   }
 
-  private turnKey(sessionId: string, turnId: string): string {
-    return `${sessionId}\u0000${turnId}`;
+  private turnKey(sessionKey: string, turnId: string): string {
+    return `${sessionKey}\u0000${turnId}`;
   }
 
   private rememberActiveTurn(sessionId: string, turnId: string): void {

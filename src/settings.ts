@@ -12,6 +12,7 @@ import {
   type UpdateIndicatorState,
 } from "./update-indicator";
 import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgressPercent } from "./update-progress";
+import { AGENT_EVENT_CHANNEL, type RawAgentEvent } from "./agents";
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; installedEvents: number; expectedEvents: number; message: string };
 type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; verifiedAt: number | null; lastRealEventAt: number | null; lastRealEvent: string | null };
@@ -610,7 +611,9 @@ void listen<{ source?: string }>("agent-cat-config-changed", async ({ payload })
   bindConfig();
 });
 void listen("agent-cat-autostart-changed", () => void refreshAutostart());
-void listen("codex-event", () => void refreshHookStatus());
+void listen<RawAgentEvent>(AGENT_EVENT_CHANNEL, ({ payload }) => {
+  if (payload.agent === "codex") void refreshHookStatus();
+});
 void listen<UpdateIndicatorState>(UPDATE_STATE_EVENT, ({ payload }) => {
   if (payload.checkedFromVersion !== currentVersion) return;
   updateState = payload;
