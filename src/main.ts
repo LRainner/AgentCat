@@ -4,9 +4,17 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { PetRenderer } from "./pet-renderer";
+import { PetDragController, type DragCompletionMode, type DragEndedEvent } from "./pet-drag-controller";
 import { PointerController } from "./pointer-controller";
 import { ReactionController } from "./reaction-controller";
-import type { AgentEvent, AppConfig, CatalogResult, PetDescriptor } from "./types";
+import type { AppConfig, CatalogResult, PetDescriptor } from "./types";
+import {
+  AGENT_EVENT_CHANNEL,
+  agentRuntimeSignature,
+  isAgentEnabled,
+  normalizeAgentEvent,
+  type RawAgentEvent,
+} from "./agents";
 import {
   nextUpdateCheckDelay,
   readUpdateState,
@@ -21,12 +29,14 @@ const fallback = document.querySelector<HTMLElement>("#fallback-cat")!;
 const errorBox = document.querySelector<HTMLElement>("#pet-error")!;
 const renderer = new PetRenderer(sprite);
 const reactions = new ReactionController(renderer);
+const dragController = new PetDragController({
+  startDrag: (dragId) => invoke<DragCompletionMode>("start_dragging", { dragId }),
+  setDragging: (direction) => reactions.setDragging(direction),
+  savePosition: async () => { config = await invoke<AppConfig>("save_main_position"); },
+});
 let config: AppConfig;
 let pointer: PointerController | null = null;
 let activePet: PetDescriptor | null = null;
-let dragged = false;
-let pointerDown: { x: number; y: number } | null = null;
-let lastWindowX: number | null = null;
 let clickTimer: number | null = null;
 let petLoadRequest = 0;
 let updateCheckTimer: number | null = null;
@@ -111,7 +121,7 @@ async function refreshActivePet(): Promise<void> {
 async function applyConfig(next: AppConfig, forcePetRefresh = false): Promise<void> {
   const previous = config;
   config = next;
-  if (previous && previous.codex.hooksEnabled !== config.codex.hooksEnabled) reactions.reset();
+  if (previous && agentRuntimeSignature(previous) !== agentRuntimeSignature(config)) reactions.reset();
   stage.style.setProperty("--pet-opacity", String(Math.min(1, Math.max(0.2, config.window.petOpacity))));
   const petChanged = forcePetRefresh
     || !previous
@@ -156,33 +166,19 @@ stage.addEventListener("contextmenu", (event) => {
 
 stage.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || config?.window.lockPosition) return;
-  pointerDown = { x: event.screenX, y: event.screenY };
-  dragged = false;
+  dragController.pointerDown({ x: event.screenX, y: event.screenY });
 });
 
 stage.addEventListener("pointermove", (event) => {
-  if (!pointerDown || dragged) return;
-  const dx = event.screenX - pointerDown.x;
-  const dy = event.screenY - pointerDown.y;
-  if (Math.hypot(dx, dy) < 5) return;
-  dragged = true;
-  reactions.setDragging(dx >= 0 ? "right" : "left");
-  void invoke("start_dragging");
+  dragController.pointerMove({ x: event.screenX, y: event.screenY });
 });
 
-async function finishDrag(): Promise<void> {
-  pointerDown = null;
-  if (!dragged) return;
-  window.setTimeout(() => reactions.setDragging(null), 80);
-  try { config = await invoke<AppConfig>("save_main_position"); } catch { /* position persistence is best effort */ }
-  window.setTimeout(() => { dragged = false; }, 120);
-}
-
-window.addEventListener("pointerup", () => void finishDrag());
-window.addEventListener("blur", () => void finishDrag());
+window.addEventListener("pointerup", () => dragController.pointerReleased());
+window.addEventListener("blur", () => dragController.pointerReleased());
+void listen<DragEndedEvent>("agent-cat-drag-ended", ({ payload }) => dragController.nativeEnded(payload));
 
 stage.addEventListener("click", () => {
-  if (dragged || !config.behavior.clickToWave) return;
+  if (dragController.shouldSuppressClick() || !config.behavior.clickToWave) return;
   if (clickTimer !== null) window.clearTimeout(clickTimer);
   clickTimer = window.setTimeout(() => {
     reactions.interact("waving");
@@ -191,22 +187,25 @@ stage.addEventListener("click", () => {
 });
 
 stage.addEventListener("dblclick", () => {
-  if (dragged || !config.behavior.doubleClickToJump) return;
+  if (dragController.shouldSuppressClick() || !config.behavior.doubleClickToJump) return;
   if (clickTimer !== null) window.clearTimeout(clickTimer);
   clickTimer = null;
   reactions.interact("jumping");
 });
 
 void getCurrentWindow().onMoved(({ payload }) => {
-  if (lastWindowX !== null && dragged) reactions.setDragging(payload.x >= lastWindowX ? "right" : "left");
-  lastWindowX = payload.x;
+  dragController.windowMoved(payload.x);
   void invoke("sync_status_window", { contentHeight: null });
 });
 
-void listen<AgentEvent>("codex-event", ({ payload }) => {
-  if (config?.codex.hooksEnabled) reactions.setAgentEvent(payload);
+void listen<RawAgentEvent>(AGENT_EVENT_CHANNEL, ({ payload }) => {
+  const event = normalizeAgentEvent(payload);
+  if (event && config && isAgentEnabled(config, event.agent)) reactions.setAgentEvent(event);
 });
-void listen("agent-cat-pet-state-reset", () => reactions.reset());
+void listen("agent-cat-pet-state-reset", () => {
+  dragController.reset();
+  reactions.reset();
+});
 
 void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
   void applyConfig(payload).catch((error) => { errorBox.textContent = String(error); });

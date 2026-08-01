@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentLiveStatus, AgentStatusPhase } from "./types";
 import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
+import { agentDisplayName, agentSessionKey } from "./agents";
 
 const ACTIVE_TIMEOUT_MS = 120_000;
 const STALLED_RETENTION_MS = 10 * 60_000;
@@ -62,17 +63,18 @@ function transient(phase: AgentStatusPhase, detail: string, afterMs: number): Ev
   return { phase, detail, timeout: { kind: "hide", afterMs } };
 }
 
-function stalledDetail(phase: AgentStatusPhase): string {
-  if (phase === "waiting") return "等待确认超过 2 分钟，请检查 Codex 状态";
+function stalledDetail(phase: AgentStatusPhase, agentName: string): string {
+  if (phase === "waiting") return `等待确认超过 2 分钟，请检查 ${agentName} 状态`;
   if (phase === "tool") return "工具 2 分钟无更新，可能仍在执行或连接异常";
   return "已 2 分钟无更新，任务可能卡住或连接异常";
 }
 
 function eventPresentation(payload: AgentEvent): EventPresentation | null {
+  const agentName = agentDisplayName(payload.agent);
   switch (payload.event) {
     case "SessionStart": return payload.sessionSource === "compact"
       ? null
-      : transient("starting", "Codex 会话已启动，正在等待任务", SESSION_START_TIMEOUT_MS);
+      : transient("starting", `${agentName} 会话已启动，正在等待任务`, SESSION_START_TIMEOUT_MS);
     case "UserPromptSubmit": return active("thinking", "已收到新任务，正在分析需求");
     case "PreToolUse": return active("tool", toolDetail(payload.event, payload.toolName));
     case "PostToolUse": return active("thinking", toolDetail(payload.event, payload.toolName));
@@ -82,11 +84,11 @@ function eventPresentation(payload: AgentEvent): EventPresentation | null {
     case "PostCompact": return payload.compactTrigger === "manual"
       ? transient("done", "手动上下文压缩已完成", COMPACT_DONE_TIMEOUT_MS)
       : active("thinking", "自动上下文压缩已完成，正在继续任务");
-    case "PermissionRequest": return active("waiting", "Codex 请求操作确认，请返回 Codex 处理");
-    case "Stop": return transient("done", "Codex 已完成当前任务", TASK_DONE_TIMEOUT_MS);
-    case "SessionEnd": return transient("done", "Codex 会话已退出", SESSION_END_TIMEOUT_MS);
+    case "PermissionRequest": return active("waiting", `${agentName} 请求操作确认，请返回 ${agentName} 处理`);
+    case "Stop": return transient("done", `${agentName} 已完成当前任务`, TASK_DONE_TIMEOUT_MS);
+    case "SessionEnd": return transient("done", `${agentName} 会话已退出`, SESSION_END_TIMEOUT_MS);
     case "TurnInterrupted": return transient("interrupted", "当前任务已被中断", INTERRUPTED_TIMEOUT_MS);
-    case "HookParseError": return transient("error", "Agent Cat 无法解析最新的 Codex 状态", ERROR_TIMEOUT_MS);
+    case "HookParseError": return transient("error", `Agent Cat 无法解析最新的 ${agentName} 状态`, ERROR_TIMEOUT_MS);
     default: return null;
   }
 }
@@ -107,17 +109,18 @@ export class LiveStatusController {
   setAgentEvent(payload: AgentEvent): void {
     const presentation = eventPresentation(payload);
     if (!presentation) return;
+    const sessionKey = agentSessionKey(payload);
     const eventKey = agentEventKey(payload);
     if (this.terminalEvents.shouldIgnore(payload, eventKey)) return;
-    const previous = this.sessions.get(payload.sessionId);
-    const latestEvent = this.latestEvents.get(payload.sessionId);
+    const previous = this.sessions.get(sessionKey);
+    const latestEvent = this.latestEvents.get(sessionKey);
     if (latestEvent && (payload.timestamp < latestEvent.timestamp || latestEvent.keys.has(eventKey))) return;
 
     const latestEventKeys = payload.timestamp === latestEvent?.timestamp
       ? latestEvent.keys
       : new Set<string>();
     latestEventKeys.add(eventKey);
-    this.latestEvents.set(payload.sessionId, { timestamp: payload.timestamp, keys: latestEventKeys });
+    this.latestEvents.set(sessionKey, { timestamp: payload.timestamp, keys: latestEventKeys });
     this.terminalEvents.recordActivity(payload);
     if (payload.event === "Stop" || payload.event === "TurnInterrupted") {
       this.terminalEvents.recordTurn(payload, eventKey);
@@ -126,12 +129,16 @@ export class LiveStatusController {
     }
 
     const suppliedTitle = sanitizeStatusText(payload.title);
-    if (suppliedTitle) this.titles.set(payload.sessionId, suppliedTitle);
+    if (suppliedTitle) this.titles.set(sessionKey, suppliedTitle);
+    const agentName = agentDisplayName(payload.agent);
     const title = payload.event === "HookParseError"
-      ? "Codex 状态更新失败"
-      : this.titles.get(payload.sessionId) ?? (payload.event === "SessionStart" ? "Codex" : "Codex 任务");
+      ? `${agentName} 状态更新失败`
+      : this.titles.get(sessionKey) ?? (payload.event === "SessionStart" ? agentName : `${agentName} 任务`);
 
     const status: AgentLiveStatus = {
+      agent: payload.agent,
+      agentName,
+      sessionKey,
       sessionId: payload.sessionId,
       phase: presentation.phase,
       title,
@@ -141,10 +148,10 @@ export class LiveStatusController {
     if (previous) globalThis.clearTimeout(previous.timeoutTimer);
     const updateOrder = ++this.updateOrder;
     const timeoutTimer = globalThis.setTimeout(() => {
-      if (presentation.timeout.kind === "stale") this.markStalled(payload.sessionId, updateOrder);
-      else this.clearIfCurrent(payload.sessionId, updateOrder);
+      if (presentation.timeout.kind === "stale") this.markStalled(sessionKey, updateOrder);
+      else this.clearIfCurrent(sessionKey, updateOrder);
     }, presentation.timeout.afterMs);
-    this.sessions.set(payload.sessionId, {
+    this.sessions.set(sessionKey, {
       status,
       timeoutTimer,
       updateOrder,
@@ -158,14 +165,14 @@ export class LiveStatusController {
       .map(({ status }) => status);
   }
 
-  clear(sessionId?: string): void {
-    if (sessionId) {
-      const session = this.sessions.get(sessionId);
+  clear(sessionKey?: string): void {
+    if (sessionKey) {
+      const session = this.sessions.get(sessionKey);
       if (!session) return;
       globalThis.clearTimeout(session.timeoutTimer);
-      this.sessions.delete(sessionId);
-      this.titles.delete(sessionId);
-      this.latestEvents.delete(sessionId);
+      this.sessions.delete(sessionKey);
+      this.titles.delete(sessionKey);
+      this.latestEvents.delete(sessionKey);
     } else {
       for (const session of this.sessions.values()) globalThis.clearTimeout(session.timeoutTimer);
       this.sessions.clear();
@@ -189,19 +196,19 @@ export class LiveStatusController {
     this.onChange(this.getStatuses());
   }
 
-  private markStalled(sessionId: string, expectedOrder: number): void {
-    const current = this.sessions.get(sessionId);
+  private markStalled(sessionKey: string, expectedOrder: number): void {
+    const current = this.sessions.get(sessionKey);
     if (!current || current.updateOrder !== expectedOrder) return;
     const updateOrder = ++this.updateOrder;
     const timeoutTimer = globalThis.setTimeout(
-      () => this.clearIfCurrent(sessionId, updateOrder),
+      () => this.clearIfCurrent(sessionKey, updateOrder),
       STALLED_RETENTION_MS,
     );
-    this.sessions.set(sessionId, {
+    this.sessions.set(sessionKey, {
       status: {
         ...current.status,
         phase: "stalled",
-        detail: stalledDetail(current.status.phase),
+        detail: stalledDetail(current.status.phase, current.status.agentName),
       },
       timeoutTimer,
       updateOrder,
@@ -209,8 +216,8 @@ export class LiveStatusController {
     this.emitChange();
   }
 
-  private clearIfCurrent(sessionId: string, expectedOrder: number): void {
-    if (this.sessions.get(sessionId)?.updateOrder !== expectedOrder) return;
-    this.clear(sessionId);
+  private clearIfCurrent(sessionKey: string, expectedOrder: number): void {
+    if (this.sessions.get(sessionKey)?.updateOrder !== expectedOrder) return;
+    this.clear(sessionKey);
   }
 }

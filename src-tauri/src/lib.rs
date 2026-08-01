@@ -1,3 +1,4 @@
+mod agent_events;
 mod codex_source;
 mod config;
 mod hook_installer;
@@ -7,6 +8,7 @@ mod pet_catalog;
 mod pet_manifest;
 mod platform;
 mod updater_proxy;
+mod window_drag;
 
 use base64::Engine;
 use config::{AppConfig, WindowConfig};
@@ -175,11 +177,11 @@ fn pointer_snapshot(app: tauri::AppHandle) -> Result<PointerSnapshot, String> {
 }
 
 #[tauri::command]
-fn start_dragging(app: tauri::AppHandle) -> Result<(), String> {
-    app.get_webview_window("main")
-        .ok_or_else(|| "宠物窗口不存在".to_string())?
-        .start_dragging()
-        .map_err(|error| error.to_string())
+fn start_dragging(
+    app: tauri::AppHandle,
+    drag_id: u64,
+) -> Result<window_drag::CompletionMode, String> {
+    window_drag::start(&app, drag_id)
 }
 
 #[tauri::command]
@@ -519,8 +521,8 @@ fn send_test_event(app: tauri::AppHandle, event: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_live_event() -> Option<hook_server::AgentEvent> {
-    hook_server::latest_event()
+fn get_live_event() -> Option<agent_events::AgentEvent> {
+    agent_events::latest()
 }
 
 #[tauri::command]
@@ -702,6 +704,7 @@ pub fn run() {
     updater_proxy::configure();
     let app = tauri::Builder::default()
         .manage(StatusWindowState(Mutex::new(96.0)))
+        .manage(window_drag::WindowDragState::default())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
@@ -744,6 +747,8 @@ pub fn run() {
             setup_tray(app, &value).map_err(std::io::Error::other)?;
             {
                 if let Some(window) = app.get_webview_window("main") {
+                    window_drag::install(&window, app.handle().clone())
+                        .map_err(std::io::Error::other)?;
                     let _ = window.set_always_on_top(value.window.always_on_top);
                     let _ = window.set_ignore_cursor_events(value.window.mouse_passthrough);
                     let _ = window.set_size(tauri::LogicalSize::new(

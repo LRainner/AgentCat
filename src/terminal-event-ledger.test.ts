@@ -5,8 +5,9 @@ import {
   TerminalEventLedger,
 } from "./terminal-event-ledger";
 import type { AgentEvent } from "./types";
+import type { AgentEventName } from "./agents";
 
-function event(sessionId: string, turnId: string, name: string, timestamp: number): AgentEvent {
+function event(sessionId: string, turnId: string, name: AgentEventName, timestamp: number): AgentEvent {
   return { version: 1, agent: "codex", sessionId, turnId, event: name, timestamp };
 }
 

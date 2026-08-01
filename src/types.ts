@@ -29,20 +29,12 @@ export type AppConfig = {
   codex: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean; bubbleScale: number; bubbleOpacity: number };
 };
 
-export type AgentEvent = {
-  version: 1;
-  agent: "codex";
-  sessionId: string;
-  event: string;
-  timestamp: number;
-  title?: string;
-  toolName?: string;
-  turnId?: string;
-  sessionSource?: string;
-  compactTrigger?: string;
-};
+export type { AgentEvent, RawAgentEvent } from "./agents/types";
 export type AgentStatusPhase = "starting" | "thinking" | "tool" | "waiting" | "stalled" | "done" | "interrupted" | "error";
 export type AgentLiveStatus = {
+  agent: string;
+  agentName: string;
+  sessionKey: string;
   sessionId: string;
   phase: AgentStatusPhase;
   title: string;
