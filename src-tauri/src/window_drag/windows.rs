@@ -63,8 +63,13 @@ impl NativeDragRegistry {
     }
 }
 
-#[derive(Default)]
 pub struct WindowDragState(Mutex<NativeDragRegistry>);
+
+impl WindowDragState {
+    pub fn new() -> Self {
+        Self(Mutex::new(NativeDragRegistry::default()))
+    }
+}
 
 pub fn install(window: &WebviewWindow, app: AppHandle) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|error| error.to_string())?.0;

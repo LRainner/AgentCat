@@ -704,7 +704,7 @@ pub fn run() {
     updater_proxy::configure();
     let app = tauri::Builder::default()
         .manage(StatusWindowState(Mutex::new(96.0)))
-        .manage(window_drag::WindowDragState::default())
+        .manage(window_drag::WindowDragState::new())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(

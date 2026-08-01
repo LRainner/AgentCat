@@ -7,8 +7,13 @@ pub enum CompletionMode {
     Webview,
 }
 
-#[derive(Default)]
 pub struct WindowDragState;
+
+impl WindowDragState {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 pub fn install(_window: &WebviewWindow, _app: AppHandle) -> Result<(), String> {
     Ok(())
