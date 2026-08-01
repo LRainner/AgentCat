@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.2](https://github.com/LRainner/AgentCat/compare/v1.5.1...v1.5.2) (2026-08-01)
+
+
+### Bug Fixes
+
+* **settings:** use native pet paths and refine position reset ([#35](https://github.com/LRainner/AgentCat/issues/35)) ([cf429bd](https://github.com/LRainner/AgentCat/commit/cf429bd316accbd947513952c986bf4edb5ec57e))
+* **updater:** keep update indicator until install ([#33](https://github.com/LRainner/AgentCat/issues/33)) ([5265901](https://github.com/LRainner/AgentCat/commit/5265901b59b181a62424d7275b6d3ff908efed47))
+* **window:** stabilize pet dragging and decouple agent integrations ([#36](https://github.com/LRainner/AgentCat/issues/36)) ([4347640](https://github.com/LRainner/AgentCat/commit/43476405cd1d46833d9ff00cd841fc62dbc94ca0))
+
 ## [1.5.1](https://github.com/LRainner/AgentCat/compare/v1.5.0...v1.5.1) (2026-07-30)
 
 
