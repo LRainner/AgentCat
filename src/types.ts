@@ -27,6 +27,7 @@ export type AppConfig = {
   window: { x: number | null; y: number | null; scale: number; petOpacity: number; alwaysOnTop: boolean; mousePassthrough: boolean; lockPosition: boolean };
   behavior: { followPointer: boolean; pointerRadius: number; pointerDeadzone: number; clickToWave: boolean; doubleClickToJump: boolean };
   codex: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean; bubbleScale: number; bubbleOpacity: number };
+  claudeCode: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean };
 };
 
 export type { AgentEvent, RawAgentEvent } from "./agents/types";

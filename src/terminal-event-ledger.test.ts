@@ -53,4 +53,21 @@ describe("TerminalEventLedger", () => {
     ledger.recordActivity(prompt);
     expect(ledger.shouldIgnore(event("session", "turn-2", "PreToolUse", 3))).toBe(false);
   });
+
+  it("keeps a turn terminal without turn ids until the next prompt", () => {
+    const ledger = new TerminalEventLedger();
+    const claudeEvent = (name: AgentEventName, timestamp: number): AgentEvent => ({
+      version: 1,
+      agent: "claude-code",
+      sessionId: "session",
+      event: name,
+      timestamp,
+    });
+    ledger.recordTurn(claudeEvent("Stop", 2));
+    expect(ledger.shouldIgnore(claudeEvent("PostToolUse", 3))).toBe(true);
+    const nextPrompt = claudeEvent("UserPromptSubmit", 4);
+    expect(ledger.shouldIgnore(nextPrompt)).toBe(false);
+    ledger.recordActivity(nextPrompt);
+    expect(ledger.shouldIgnore(claudeEvent("PreToolUse", 5))).toBe(false);
+  });
 });

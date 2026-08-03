@@ -27,6 +27,7 @@ const config = {
     bubbleScale: 1,
     bubbleOpacity: 1,
   },
+  claudeCode: { hooksEnabled: false, showLiveStatus: true, showTaskSummary: true },
 };
 
 test.beforeEach(async ({ page }) => {
@@ -35,8 +36,22 @@ test.beforeEach(async ({ page }) => {
     const callbacks = new Map<number, (...args: unknown[]) => unknown>();
     const commandLog: string[] = [];
     const failedCommands = new Set<string>();
+    const hookStatusOverrides: Record<string, Record<string, unknown>> = {};
+    const hookStatus = (agent: string) => ({
+      path: agent === "claude-code"
+        ? "C:\\Users\\Tester\\.claude\\settings.json"
+        : "C:\\Users\\Tester\\.codex\\hooks.json",
+      exists: true,
+      valid: true,
+      globallyDisabled: false,
+      installedEvents: agent === "claude-code" ? 0 : 11,
+      expectedEvents: agent === "claude-code" ? 13 : 11,
+      message: "Hook 已安装",
+      ...hookStatusOverrides[agent],
+    });
     Object.defineProperty(window, "__TAURI_TEST_COMMANDS__", { value: commandLog });
     Object.defineProperty(window, "__TAURI_TEST_FAILED_COMMANDS__", { value: failedCommands });
+    Object.defineProperty(window, "__TAURI_TEST_HOOK_STATUS_OVERRIDES__", { value: hookStatusOverrides });
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
       value: {
         transformCallback(callback: (...args: unknown[]) => unknown) {
@@ -77,14 +92,8 @@ test.beforeEach(async ({ page }) => {
               examplePath: "C:\\Users\\Tester\\Downloads\\codex-pets",
             };
             case "scan_pets": return { pets: [], diagnostics: [], codexBundles: [] };
-            case "hook_status": return {
-              path: "C:\\Users\\Tester\\.codex\\config.toml",
-              exists: true,
-              valid: true,
-              installedEvents: 10,
-              expectedEvents: 10,
-              message: "Hook 已安装",
-            };
+            case "hook_status":
+            case "install_hooks": return hookStatus(String(args.agent ?? "codex"));
             case "hook_runtime_status": return {
               receiverRunning: true,
               socketPath: "127.0.0.1:47321",
@@ -102,20 +111,73 @@ test.beforeEach(async ({ page }) => {
   }, config);
 });
 
-test("switches between the three settings pages", async ({ page }) => {
+test("switches between the three settings pages and agent details", async ({ page }) => {
   await page.goto("/settings.html");
   await expect(page.locator("#current-version")).toHaveText("v1.1.0");
   await expect(page.locator('[data-settings-panel="general"]')).toBeVisible();
+  await expect(page.locator("[data-settings-page]")).toHaveCount(3);
+  await expect(page.locator('[data-settings-panel="general"] .section-heading-actions #open-debug')).toBeVisible();
+  await expect(page.locator('[data-settings-panel="general"] #codex-link')).toHaveCount(0);
+  await expect(page.locator('[data-settings-panel="general"] #claude-code-link')).toHaveCount(0);
+  await expect(page.locator('[data-agent-panel="codex"] #open-debug')).toHaveCount(0);
 
-  await page.getByRole("tab", { name: /Codex/ }).click();
-  await expect(page).toHaveURL(/#codex$/);
-  await expect(page.locator('[data-settings-panel="codex"]')).toBeVisible();
+  await page.getByRole("tab", { name: /智能体/ }).click();
+  await expect(page).toHaveURL(/#agents\/codex$/);
+  await expect(page.locator('[data-settings-panel="agents"]')).toBeVisible();
+  await expect(page.locator('[data-agent-panel="codex"]')).toBeVisible();
   await expect(page.locator('[data-settings-panel="general"]')).toBeHidden();
+  await expect(page.locator('[data-agent-panel="codex"] .agent-detail-heading #codex-link')).toBeChecked();
+  await expect(page.locator('[data-agent-panel="codex"] .agent-detail-heading #codex-link')).toBeEnabled();
+  await expect.poll(() => page.locator('[data-agent-settings="codex"] .agent-nav-icon img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('[data-agent-settings="claude-code"] .agent-nav-icon img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
+
+  const agentNavigation = await page.locator("#agent-settings-nav").evaluate((navigation) => {
+    const buttons = [...navigation.querySelectorAll(":scope > button")];
+    return {
+      count: buttons.length,
+      rows: new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().top))).size,
+      overflows: navigation.scrollWidth > navigation.clientWidth,
+    };
+  });
+  expect(agentNavigation).toEqual({ count: 2, rows: 1, overflows: false });
+  await expect(page.locator("#codex-integration > .button-row > button")).toHaveCount(4);
+
+  await page.getByRole("tab", { name: /Claude Code/ }).click();
+  await expect(page).toHaveURL(/#agents\/claude-code$/);
+  await expect(page.locator('[data-agent-panel="claude-code"]')).toBeVisible();
+  await expect(page.locator('[data-agent-panel="codex"]')).toBeHidden();
+  await expect(page.locator('[data-agent-panel="claude-code"] .agent-detail-heading #claude-code-link')).not.toBeChecked();
+  await expect(page.locator('[data-agent-panel="claude-code"] .agent-detail-heading #claude-code-link')).toBeDisabled();
+  await expect(page.locator("#claude-code-integration")).toHaveAttribute("data-state", "setup");
+  await expect(page.locator("#claude-code-integration-title")).toHaveText("还差一步即可连接 Claude Code");
+  await expect(page.locator("#claude-code-integration-badge")).toHaveText("未连接");
+  await expect(page.locator('[data-agent-settings="claude-code"] [data-agent-status]')).toHaveText("未连接");
 
   await page.getByRole("tab", { name: /关于/ }).click();
   await expect(page).toHaveURL(/#about$/);
   await expect(page.locator('[data-settings-panel="about"]')).toBeVisible();
   await expect(page.locator("#settings-page-title")).toHaveText("关于");
+});
+
+test("shows Claude global Hook disable instead of a connected state", async ({ page }) => {
+  await page.goto("/settings.html#agents/claude-code");
+  await page.evaluate(() => {
+    const overrides = (window as unknown as {
+      __TAURI_TEST_HOOK_STATUS_OVERRIDES__: Record<string, Record<string, unknown>>;
+    }).__TAURI_TEST_HOOK_STATUS_OVERRIDES__;
+    overrides["claude-code"] = {
+      globallyDisabled: true,
+      installedEvents: 13,
+      message: "Claude Code 已全局禁用所有 Hooks",
+    };
+  });
+
+  await page.locator("#install-claude-code-hook").click();
+  await expect(page.locator("#claude-code-integration-title")).toHaveText("Claude Code 已全局禁用所有 Hooks");
+  await expect(page.locator("#claude-code-integration-badge")).toHaveText("全局禁用");
+  await expect(page.locator("#claude-code-link")).toBeDisabled();
+  await expect(page.locator("#claude-code-hook-status")).toHaveClass("status-error");
+  await expect(page.locator("#settings-message")).toContainText("disableAllHooks");
 });
 
 test("shows native pet directory paths and opens the default directory", async ({ page }) => {
@@ -166,7 +228,7 @@ test("keeps the sidebar fixed and renders the app and navigation icons", async (
   await expect.poll(() => page.locator(".settings-brand-mark").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect.poll(() => page.locator(".about-logo").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(page.locator('[data-settings-page="general"] [data-icon="settings"] svg')).toBeVisible();
-  await expect(page.locator('[data-settings-page="codex"] [data-icon="bot"] svg')).toBeVisible();
+  await expect(page.locator('[data-settings-page="agents"] [data-icon="bot"] svg')).toBeVisible();
   await expect(page.locator('[data-settings-page="about"] [data-icon="info"] svg')).toBeVisible();
   await expect(page.locator(".update-status-icon")).toHaveText("↻");
 

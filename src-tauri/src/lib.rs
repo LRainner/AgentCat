@@ -260,7 +260,7 @@ fn sync_status_window_with_config(
     status
         .set_size(logical_status_size)
         .map_err(|error| error.to_string())?;
-    if !value.codex.hooks_enabled || !value.codex.show_live_status {
+    if !has_live_status_source(value) {
         status.hide().map_err(|error| error.to_string())?;
         return Ok(());
     }
@@ -294,6 +294,11 @@ fn sync_status_window_with_config(
         .map_err(|error| error.to_string())?;
     drop(content_height_state);
     Ok(())
+}
+
+fn has_live_status_source(value: &AppConfig) -> bool {
+    (value.codex.hooks_enabled && value.codex.show_live_status)
+        || (value.claude_code.hooks_enabled && value.claude_code.show_live_status)
 }
 
 fn sync_tray_menu(app: &tauri::AppHandle, value: &WindowConfig) {
@@ -486,38 +491,38 @@ fn reveal_pet_directory() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn hook_status() -> Result<hook_installer::HookStatus, String> {
-    hook_installer::status()
+fn hook_status(agent: String) -> Result<hook_installer::HookStatus, String> {
+    hook_installer::status(&agent)
 }
 
 #[tauri::command]
-fn install_hooks() -> Result<hook_installer::HookStatus, String> {
-    install_hooks_shared()
+fn install_hooks(agent: String) -> Result<hook_installer::HookStatus, String> {
+    install_hooks_shared(&agent)
 }
 
-fn install_hooks_shared() -> Result<hook_installer::HookStatus, String> {
-    let previous_fingerprint = hook_installer::verification_fingerprint()?;
-    let status = hook_installer::install()?;
-    if previous_fingerprint != hook_installer::verification_fingerprint()? {
-        hook_verification::clear()?;
+fn install_hooks_shared(agent: &str) -> Result<hook_installer::HookStatus, String> {
+    let previous_fingerprint = hook_installer::verification_fingerprint(agent)?;
+    let status = hook_installer::install(agent)?;
+    if previous_fingerprint != hook_installer::verification_fingerprint(agent)? {
+        hook_verification::clear(agent)?;
     }
     Ok(status)
 }
 
 #[tauri::command]
-fn uninstall_hooks() -> Result<hook_installer::HookStatus, String> {
-    uninstall_hooks_shared()
+fn uninstall_hooks(agent: String) -> Result<hook_installer::HookStatus, String> {
+    uninstall_hooks_shared(&agent)
 }
 
-fn uninstall_hooks_shared() -> Result<hook_installer::HookStatus, String> {
-    let status = hook_installer::uninstall()?;
-    hook_verification::clear()?;
+fn uninstall_hooks_shared(agent: &str) -> Result<hook_installer::HookStatus, String> {
+    let status = hook_installer::uninstall(agent)?;
+    hook_verification::clear(agent)?;
     Ok(status)
 }
 
 #[tauri::command]
-fn send_test_event(app: tauri::AppHandle, event: String) -> Result<(), String> {
-    hook_server::test_event(&app, &event)
+fn send_test_event(app: tauri::AppHandle, agent: String, event: String) -> Result<(), String> {
+    hook_server::test_event(&app, &agent, &event)
 }
 
 #[tauri::command]
@@ -526,13 +531,13 @@ fn get_live_event() -> Option<agent_events::AgentEvent> {
 }
 
 #[tauri::command]
-fn hook_runtime_status() -> hook_server::HookRuntimeStatus {
-    hook_server::runtime_status()
+fn hook_runtime_status(agent: String) -> hook_server::HookRuntimeStatus {
+    hook_server::runtime_status(&agent)
 }
 
 #[tauri::command]
-fn probe_hook() -> Result<hook_server::HookRuntimeStatus, String> {
-    hook_server::probe_hook()
+fn probe_hook(agent: String) -> Result<hook_server::HookRuntimeStatus, String> {
+    hook_server::probe_hook(&agent)
 }
 
 fn show_aux_window(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
@@ -677,20 +682,25 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
 
 pub fn handle_cli() -> bool {
     let args: Vec<String> = std::env::args().collect();
+    let agent = args
+        .windows(2)
+        .find(|pair| pair[0] == "--agent")
+        .map(|pair| pair[1].as_str())
+        .unwrap_or(hook_installer::CODEX);
     match args.get(1).map(String::as_str) {
         Some("hook") => {
-            hook_server::run_cli_hook();
+            hook_server::run_cli_hook(agent);
             true
         }
         Some("install-hooks") => {
-            if let Err(error) = install_hooks_shared() {
+            if let Err(error) = install_hooks_shared(agent) {
                 eprintln!("{error}");
                 std::process::exit(1);
             }
             true
         }
         Some("uninstall-hooks") => {
-            if let Err(error) = uninstall_hooks_shared() {
+            if let Err(error) = uninstall_hooks_shared(agent) {
                 eprintln!("{error}");
                 std::process::exit(1);
             }
@@ -806,5 +816,19 @@ mod tests {
                 .to_string_lossy()
                 .to_string()
         );
+    }
+
+    #[test]
+    fn live_status_source_supports_every_codex_and_claude_configuration() {
+        for mask in 0_u8..16 {
+            let mut config = AppConfig::default();
+            config.codex.hooks_enabled = mask & 1 != 0;
+            config.codex.show_live_status = mask & 2 != 0;
+            config.claude_code.hooks_enabled = mask & 4 != 0;
+            config.claude_code.show_live_status = mask & 8 != 0;
+            let expected = (config.codex.hooks_enabled && config.codex.show_live_status)
+                || (config.claude_code.hooks_enabled && config.claude_code.show_live_status);
+            assert_eq!(has_live_status_source(&config), expected, "mask={mask:04b}");
+        }
     }
 }
