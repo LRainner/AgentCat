@@ -22,6 +22,8 @@ pub struct AppConfig {
     pub window: WindowConfig,
     pub behavior: BehaviorConfig,
     pub codex: CodexConfig,
+    #[serde(default)]
+    pub claude_code: ClaudeCodeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,6 +80,27 @@ pub struct CodexConfig {
     pub bubble_opacity: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeCodeConfig {
+    #[serde(default)]
+    pub hooks_enabled: bool,
+    #[serde(default = "default_true")]
+    pub show_live_status: bool,
+    #[serde(default = "default_true")]
+    pub show_task_summary: bool,
+}
+
+impl Default for ClaudeCodeConfig {
+    fn default() -> Self {
+        Self {
+            hooks_enabled: false,
+            show_live_status: true,
+            show_task_summary: true,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -123,6 +146,7 @@ impl Default for AppConfig {
                 bubble_scale: 1.0,
                 bubble_opacity: 0.92,
             },
+            claude_code: ClaudeCodeConfig::default(),
         }
     }
 }
@@ -256,6 +280,17 @@ mod tests {
         assert_eq!(window.pet_opacity, 1.0);
         assert_eq!(codex.bubble_scale, 1.0);
         assert_eq!(codex.bubble_opacity, 0.92);
+
+        let app: AppConfig = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "pet": null,
+            "petSources": { "scanCodexBuiltin": true, "scanCodexCustom": true, "extraDirectories": [] },
+            "window": { "x": null, "y": null, "scale": 0.75, "alwaysOnTop": true, "mousePassthrough": false, "lockPosition": false },
+            "behavior": { "followPointer": true, "pointerRadius": 500.0, "pointerDeadzone": 36.0, "clickToWave": true, "doubleClickToJump": true },
+            "codex": { "hooksEnabled": true, "showLiveStatus": true, "showTaskSummary": true }
+        })).unwrap();
+        assert!(!app.claude_code.hooks_enabled);
+        assert!(app.claude_code.show_live_status);
     }
 
     #[cfg(unix)]

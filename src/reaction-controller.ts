@@ -57,6 +57,7 @@ export class ReactionController {
       case "UserPromptSubmit":
       case "PreToolUse":
       case "PostToolUse":
+      case "PostToolUseFailure":
       case "SubagentStart":
       case "SubagentStop":
         session.base = "working";
@@ -79,6 +80,12 @@ export class ReactionController {
         session.compactResumeBase = null;
         this.terminalEvents.recordTurn(payload, eventKey);
         reaction = "complete";
+        break;
+      case "StopFailure":
+        session.base = "idle";
+        session.compactResumeBase = null;
+        this.terminalEvents.recordTurn(payload, eventKey);
+        reaction = "failed";
         break;
       case "TurnInterrupted":
         session.base = "idle";

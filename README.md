@@ -12,7 +12,7 @@
   English · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex integration on macOS and Windows.
+Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex and Claude Code integrations on macOS and Windows.
 
 <p align="center">
   <a href="docs/images/agent-cat-overview.png">
@@ -20,7 +20,7 @@ Agent Cat brings AI agent activity to life through animated desktop pets and rea
   </a>
 </p>
 
-> **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and Windows 10 or later, and integrates with Codex. Support for more agents and operating systems is planned.
+> **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and Windows 10 or later, and integrates with Codex and Claude Code. Support for more agents and operating systems is planned.
 
 ## Download
 
@@ -41,11 +41,17 @@ The current Windows build is not code-signed. Windows SmartScreen may show a war
 - On-demand access to locally installed pet assets without copying or redistributing them
 - A built-in original fallback pet when no compatible pet pack is available
 
-## Codex integration
+## Agent integrations
+
+### Codex
 
 Agent Cat can react to Codex sessions through command hooks. The settings window can install, repair, test, and remove the integration while preserving hooks owned by other tools.
 
 The integration currently recognizes session start/end, prompt, tool, subagent, compaction, permission, completion, and interrupted-turn events. Live status and task summaries can be enabled independently.
+
+### Claude Code
+
+Agent Cat installs command hooks into `~/.claude/settings.json` without replacing existing Claude Code settings or hooks. It observes 13 state-relevant events covering sessions, prompts, tools and tool failures, subagents, compaction, permission requests, turn completion and API failures. The integration can be installed, tested, paused, repaired, and removed independently from Codex.
 
 ## Pet packs
 
@@ -128,7 +134,7 @@ src-tauri/    Rust backend, Tauri configuration, and platform icons
 
 ## Privacy
 
-Agent Cat processes Codex events locally. Its hook helper extracts lifecycle identifiers, the hook event name, a sanitized tool name, and the active transcript path, sends them through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately. To detect Esc interruptions, Agent Cat reads only newly appended local transcript records while a task is active and discards raw records after checking their lifecycle metadata.
+Agent Cat processes Codex and Claude Code events locally. Its hook helper extracts lifecycle identifiers, the hook event name, and a sanitized tool name, sends them through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately. For Codex only, it also receives the active transcript path to detect Esc interruptions, reads only newly appended records while a task is active, and discards raw records after checking their lifecycle metadata. Claude Code transcripts are not observed.
 
 When task summaries are enabled, Agent Cat keeps at most the first non-empty prompt line, truncated to 80 characters, in memory for live display. It does not store the summary in its configuration, logs, or history.
 

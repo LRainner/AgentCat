@@ -1,5 +1,5 @@
 pub use crate::agent_events::AgentEvent;
-use crate::{agent_events, config};
+use crate::{agent_events, config, hook_installer};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
@@ -24,31 +24,19 @@ use unix as transport;
 #[cfg(windows)]
 use windows as transport;
 
-const HOOK_EVENTS: [&str; 11] = [
+const DISPLAY_EVENTS: [&str; 15] = [
     "SessionStart",
     "UserPromptSubmit",
     "PreToolUse",
     "PostToolUse",
+    "PostToolUseFailure",
     "SubagentStart",
     "SubagentStop",
     "PreCompact",
     "PostCompact",
     "PermissionRequest",
     "Stop",
-    "SessionEnd",
-];
-
-const DISPLAY_EVENTS: [&str; 13] = [
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "SubagentStart",
-    "SubagentStop",
-    "PreCompact",
-    "PostCompact",
-    "PermissionRequest",
-    "Stop",
+    "StopFailure",
     "SessionEnd",
     "TurnInterrupted",
     "HookParseError",
@@ -69,7 +57,8 @@ struct DecodedHookPayload {
     transcript_path: Option<PathBuf>,
 }
 
-static LATEST_REAL_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();
+static LATEST_REAL_EVENTS: OnceLock<Mutex<std::collections::HashMap<String, AgentEvent>>> =
+    OnceLock::new();
 static RECEIVER_RUNNING: AtomicBool = AtomicBool::new(false);
 static OWNS_SOCKET: AtomicBool = AtomicBool::new(false);
 const HEALTH_CHECK_PAYLOAD: &[u8] = b"agent-cat-hook-health-v1";
@@ -85,7 +74,7 @@ pub struct HookRuntimeStatus {
 }
 
 #[derive(Debug, Deserialize)]
-struct CodexInput {
+struct HookInput {
     session_id: Option<String>,
     hook_event_name: Option<String>,
     turn_id: Option<String>,
@@ -101,25 +90,30 @@ pub fn socket_path() -> Result<PathBuf, String> {
     Ok(config::config_dir()?.join(transport::ENDPOINT_NAME))
 }
 
-pub fn run_cli_hook() {
+pub fn run_cli_hook(agent: &str) {
+    let agent = agent.to_string();
     let result = (|| -> Result<(), String> {
         let mut bytes = Vec::new();
         std::io::stdin()
             .take(1024 * 1024)
             .read_to_end(&mut bytes)
             .map_err(|error| error.to_string())?;
-        let input: CodexInput =
-            serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        let codex_config = config::load().ok().map(|value| value.codex);
-        let transcript_path = codex_config
+        let input: HookInput = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+        let app_config = config::load().ok();
+        let show_task_summary = app_config
             .as_ref()
-            .is_some_and(|value| value.hooks_enabled)
-            .then(|| input.transcript_path.clone())
-            .flatten();
-        let show_task_summary = codex_config
-            .as_ref()
-            .is_some_and(|value| value.show_task_summary);
-        let event = build_event(input, show_task_summary, now_ms())?;
+            .is_some_and(|value| match agent.as_str() {
+                hook_installer::CODEX => value.codex.show_task_summary,
+                hook_installer::CLAUDE_CODE => value.claude_code.show_task_summary,
+                _ => false,
+            });
+        let transcript_path = (agent == hook_installer::CODEX
+            && app_config
+                .as_ref()
+                .is_some_and(|value| value.codex.hooks_enabled))
+        .then(|| input.transcript_path.clone())
+        .flatten();
+        let event = build_event(&agent, input, show_task_summary, now_ms())?;
         let mut stream = transport::connect(&socket_path()?)?;
         stream
             .set_write_timeout(Some(Duration::from_millis(150)))
@@ -165,15 +159,20 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
                     .map(|_| decode_wire_payload(&bytes))
                 {
                     Ok(Ok(Some(payload))) => {
-                        rollout_observer::handle_hook_event(
-                            &payload.event,
-                            payload.transcript_path.as_deref(),
-                        );
+                        if payload.event.agent == hook_installer::CODEX {
+                            rollout_observer::handle_hook_event(
+                                &payload.event,
+                                payload.transcript_path.as_deref(),
+                            );
+                        }
                         emit_event(&app, payload.event);
                     }
                     Ok(Ok(None)) => {}
-                    Ok(Err(_)) => emit_parse_error(&app),
-                    Err(_) => emit_parse_error(&app),
+                    Ok(Err(_)) | Err(_) => {
+                        let agent = incoming_agent_hint(&bytes)
+                            .unwrap_or_else(|| hook_installer::CODEX.to_string());
+                        emit_parse_error(&app, &agent);
+                    }
                 }
             }
             RECEIVER_RUNNING.store(false, Ordering::Release);
@@ -237,20 +236,33 @@ fn decode_wire_payload(bytes: &[u8]) -> Result<Option<DecodedHookPayload>, Strin
     }))
 }
 
-pub fn test_event(app: &AppHandle, event: &str) -> Result<(), String> {
-    if !DISPLAY_EVENTS.contains(&event) {
+fn incoming_agent_hint(bytes: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    value
+        .get("event")
+        .filter(|event| event.is_object())
+        .unwrap_or(&value)
+        .get("agent")?
+        .as_str()
+        .filter(|agent| matches!(*agent, hook_installer::CODEX | hook_installer::CLAUDE_CODE))
+        .map(str::to_string)
+}
+
+pub fn test_event(app: &AppHandle, agent: &str, event: &str) -> Result<(), String> {
+    if !DISPLAY_EVENTS.contains(&event) || !hook_installer::supports_event(agent, event) {
         return Err("不支持的测试事件".into());
     }
     emit_event(
         app,
         AgentEvent {
             version: 1,
-            agent: "codex".into(),
+            agent: agent.into(),
             session_id: "agent-cat-test".into(),
             event: event.into(),
             timestamp: now_ms(),
             title: (event == "UserPromptSubmit").then(|| "Agent Cat 实时状态测试".into()),
-            tool_name: matches!(event, "PreToolUse" | "PostToolUse").then(|| "apply_patch".into()),
+            tool_name: matches!(event, "PreToolUse" | "PostToolUse" | "PostToolUseFailure")
+                .then(|| "Bash".into()),
             turn_id: None,
             session_source: None,
             compact_trigger: None,
@@ -259,9 +271,9 @@ pub fn test_event(app: &AppHandle, event: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn runtime_status() -> HookRuntimeStatus {
-    let verified_at = crate::hook_verification::verified_at();
-    let latest_real = verified_at.and_then(|_| latest_real_event());
+pub fn runtime_status(agent: &str) -> HookRuntimeStatus {
+    let verified_at = crate::hook_verification::verified_at(agent);
+    let latest_real = verified_at.and_then(|_| latest_real_event(agent));
     HookRuntimeStatus {
         receiver_running: RECEIVER_RUNNING.load(Ordering::Acquire),
         socket_path: socket_path()
@@ -273,31 +285,37 @@ pub fn runtime_status() -> HookRuntimeStatus {
     }
 }
 
-pub fn probe_hook() -> Result<HookRuntimeStatus, String> {
+pub fn probe_hook(agent: &str) -> Result<HookRuntimeStatus, String> {
+    if !matches!(agent, hook_installer::CODEX | hook_installer::CLAUDE_CODE) {
+        return Err(format!("不支持的 Agent：{agent}"));
+    }
     if !RECEIVER_RUNNING.load(Ordering::Acquire) {
         return Err("Hook 状态接收器未运行，请重启 Agent Cat".into());
     }
     let timestamp = now_ms();
     let session_id = format!("agent-cat-probe-{timestamp}");
     let turn_id = format!("probe-turn-{timestamp}");
-    relay_probe_event(serde_json::json!({
-        "session_id": &session_id,
-        "hook_event_name": "Stop",
-        "turn_id": &turn_id,
-        "display_title": "Agent Cat 连接测试"
-    }))?;
-    if !wait_for_probe_event(&session_id, "Stop") {
+    relay_probe_event(
+        agent,
+        serde_json::json!({
+            "session_id": &session_id,
+            "hook_event_name": "Stop",
+            "turn_id": &turn_id,
+            "display_title": "Agent Cat 连接测试"
+        }),
+    )?;
+    if !wait_for_probe_event(agent, &session_id, "Stop") {
         return Err("Hook 测试结束事件未到达 Agent Cat，请尝试重启应用".into());
     }
-    Ok(runtime_status())
+    Ok(runtime_status(agent))
 }
 
-fn relay_probe_event(payload: serde_json::Value) -> Result<(), String> {
+fn relay_probe_event(agent: &str, payload: serde_json::Value) -> Result<(), String> {
     let payload = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
     let executable = std::env::current_exe()
         .map_err(|error| format!("无法确定 Agent Cat 可执行文件：{error}"))?;
     let mut child = Command::new(executable)
-        .args(["hook", "--agent", "codex"])
+        .args(["hook", "--agent", agent])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -318,12 +336,14 @@ fn relay_probe_event(payload: serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-fn wait_for_probe_event(session_id: &str, event: &str) -> bool {
+fn wait_for_probe_event(agent: &str, session_id: &str, event: &str) -> bool {
     let deadline = Instant::now() + Duration::from_millis(500);
     while Instant::now() < deadline {
         if latest_event()
             .as_ref()
-            .map(|value| value.session_id == session_id && value.event == event)
+            .map(|value| {
+                value.agent == agent && value.session_id == session_id && value.event == event
+            })
             .unwrap_or(false)
         {
             return true;
@@ -333,12 +353,12 @@ fn wait_for_probe_event(session_id: &str, event: &str) -> bool {
     false
 }
 
-fn emit_parse_error(app: &AppHandle) {
+fn emit_parse_error(app: &AppHandle, agent: &str) {
     emit_event(
         app,
         AgentEvent {
             version: 1,
-            agent: "codex".into(),
+            agent: agent.into(),
             session_id: "unknown".into(),
             event: "HookParseError".into(),
             timestamp: now_ms(),
@@ -352,11 +372,14 @@ fn emit_parse_error(app: &AppHandle) {
 }
 
 fn emit_event(app: &AppHandle, event: AgentEvent) {
-    if is_real_codex_event(&event) {
-        if let Ok(mut latest) = LATEST_REAL_EVENT.get_or_init(|| Mutex::new(None)).lock() {
-            *latest = Some(event.clone());
+    if is_real_agent_event(&event) {
+        if let Ok(mut latest) = LATEST_REAL_EVENTS
+            .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+            .lock()
+        {
+            latest.insert(event.agent.clone(), event.clone());
         }
-        let _ = crate::hook_verification::record(event.timestamp);
+        let _ = crate::hook_verification::record(&event.agent, event.timestamp);
     }
     agent_events::publish(app, event);
 }
@@ -365,29 +388,30 @@ pub fn latest_event() -> Option<AgentEvent> {
     agent_events::latest()
 }
 
-fn latest_real_event() -> Option<AgentEvent> {
-    LATEST_REAL_EVENT
-        .get_or_init(|| Mutex::new(None))
+fn latest_real_event(agent: &str) -> Option<AgentEvent> {
+    LATEST_REAL_EVENTS
+        .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
         .lock()
         .ok()
-        .and_then(|event| event.clone())
+        .and_then(|events| events.get(agent).cloned())
 }
 
-fn is_real_codex_event(event: &AgentEvent) -> bool {
+fn is_real_agent_event(event: &AgentEvent) -> bool {
     event.event != "HookParseError"
         && !event.session_id.starts_with("agent-cat-test")
         && !event.session_id.starts_with("agent-cat-probe")
 }
 
 fn build_event(
-    input: CodexInput,
+    agent: &str,
+    input: HookInput,
     show_task_summary: bool,
     timestamp: u64,
 ) -> Result<AgentEvent, String> {
     let event = input
         .hook_event_name
         .ok_or_else(|| "hook_event_name missing".to_string())?;
-    if !HOOK_EVENTS.contains(&event.as_str()) {
+    if !hook_installer::supports_event(agent, &event) {
         return Err("unsupported hook event".into());
     }
     let title = input
@@ -403,7 +427,7 @@ fn build_event(
         });
     Ok(AgentEvent {
         version: 1,
-        agent: "codex".into(),
+        agent: agent.into(),
         session_id: input.session_id.unwrap_or_else(|| "unknown".into()),
         event,
         timestamp,
@@ -416,10 +440,15 @@ fn build_event(
 }
 
 fn validate_incoming_event(mut event: AgentEvent) -> Result<AgentEvent, String> {
-    if event.version != 1 || event.agent != "codex" {
+    if event.version != 1
+        || !matches!(
+            event.agent.as_str(),
+            hook_installer::CODEX | hook_installer::CLAUDE_CODE
+        )
+    {
         return Err("unsupported event envelope".into());
     }
-    if !HOOK_EVENTS.contains(&event.event.as_str()) {
+    if !hook_installer::supports_event(&event.agent, &event.event) {
         return Err("unsupported hook event".into());
     }
     if event.session_id.is_empty() || event.session_id.chars().count() > 256 {
@@ -558,7 +587,7 @@ mod tests {
 
     #[test]
     fn event_only_includes_opted_in_summary_and_safe_tool_name() {
-        let input = CodexInput {
+        let input = HookInput {
             session_id: Some("session".into()),
             hook_event_name: Some("UserPromptSubmit".into()),
             turn_id: Some("turn-1".into()),
@@ -569,7 +598,7 @@ mod tests {
             prompt: Some("修复实时状态显示".into()),
             tool_name: Some("bad tool name".into()),
         };
-        let event = build_event(input, false, 42).unwrap();
+        let event = build_event(hook_installer::CODEX, input, false, 42).unwrap();
         assert_eq!(event.timestamp, 42);
         assert_eq!(event.title, None);
         assert_eq!(event.tool_name, None);
@@ -578,20 +607,20 @@ mod tests {
 
     #[test]
     fn explicit_display_title_is_sanitized_without_task_summaries() {
-        let input: CodexInput = serde_json::from_value(serde_json::json!({
+        let input: HookInput = serde_json::from_value(serde_json::json!({
             "session_id": "agent-cat-probe-1",
             "hook_event_name": "Stop",
             "turn_id": "probe-turn-1",
             "display_title": " Agent Cat\n连接测试 "
         }))
         .unwrap();
-        let event = build_event(input, false, 42).unwrap();
+        let event = build_event(hook_installer::CODEX, input, false, 42).unwrap();
         assert_eq!(event.title.as_deref(), Some("Agent Cat 连接测试"));
     }
 
     #[test]
     fn rejects_unknown_events_and_sanitizes_socket_payloads() {
-        let unknown = CodexInput {
+        let unknown = HookInput {
             session_id: Some("session".into()),
             hook_event_name: Some("FutureEvent".into()),
             turn_id: None,
@@ -602,7 +631,7 @@ mod tests {
             prompt: None,
             tool_name: None,
         };
-        assert!(build_event(unknown, false, 42).is_err());
+        assert!(build_event(hook_installer::CODEX, unknown, false, 42).is_err());
 
         let event = validate_incoming_event(AgentEvent {
             version: 1,
@@ -643,10 +672,10 @@ mod tests {
             compact_trigger: None,
         };
 
-        assert!(is_real_codex_event(&event("session-1", "SessionStart")));
-        assert!(!is_real_codex_event(&event("agent-cat-test", "Stop")));
-        assert!(!is_real_codex_event(&event("agent-cat-probe-1", "Stop")));
-        assert!(!is_real_codex_event(&event("unknown", "HookParseError")));
+        assert!(is_real_agent_event(&event("session-1", "SessionStart")));
+        assert!(!is_real_agent_event(&event("agent-cat-test", "Stop")));
+        assert!(!is_real_agent_event(&event("agent-cat-probe-1", "Stop")));
+        assert!(!is_real_agent_event(&event("unknown", "HookParseError")));
     }
 
     #[test]
@@ -674,6 +703,24 @@ mod tests {
         assert_eq!(
             decoded.transcript_path.as_deref(),
             Some(std::path::Path::new("/private/transcript.jsonl"))
+        );
+    }
+
+    #[test]
+    fn claude_code_failure_events_use_the_shared_envelope() {
+        let input: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "claude-session",
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Bash"
+        }))
+        .unwrap();
+        let event = build_event(hook_installer::CLAUDE_CODE, input, false, 42).unwrap();
+        assert_eq!(event.agent, hook_installer::CLAUDE_CODE);
+        assert_eq!(event.event, "PostToolUseFailure");
+        assert_eq!(event.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(
+            incoming_agent_hint(&serde_json::to_vec(&event).unwrap()).as_deref(),
+            Some("claude-code")
         );
     }
 }

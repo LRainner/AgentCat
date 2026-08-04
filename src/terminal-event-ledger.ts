@@ -7,6 +7,7 @@ export const MAX_ACTIVE_TURNS = 128;
 
 type TerminalSession = {
   ended: boolean;
+  turnEnded: boolean;
   latestTimestamp: number;
   eventKeys: Set<string>;
 };
@@ -34,13 +35,18 @@ export class TerminalEventLedger {
     const sessionKey = agentSessionKey(payload);
     const terminalSession = this.sessions.get(sessionKey);
     const startsSession = payload.event === "SessionStart" && payload.sessionSource !== "compact";
-    const startsTurn = payload.event === "UserPromptSubmit" && payload.turnId !== undefined;
+    const startsTurn = payload.event === "UserPromptSubmit";
     const terminalTurn = payload.turnId
       ? this.turns.has(this.turnKey(sessionKey, payload.turnId))
       : false;
     if (terminalSession?.ended) {
       if (payload.timestamp < terminalSession.latestTimestamp) return true;
       if (startsSession || (startsTurn && !terminalTurn)) return false;
+      return true;
+    }
+    if (terminalSession?.turnEnded && !payload.turnId) {
+      if (payload.timestamp < terminalSession.latestTimestamp) return true;
+      if (startsSession || payload.event === "UserPromptSubmit" || payload.event === "SessionEnd") return false;
       return true;
     }
     if (payload.event !== "SessionEnd" && terminalTurn) return true;
@@ -87,7 +93,7 @@ export class TerminalEventLedger {
         this.activeTurns.delete(sessionKey);
       }
     }
-    this.recordSession(payload, eventKey, false);
+    this.recordSession(payload, eventKey, false, true);
   }
 
   recordSessionEnd(payload: AgentEvent, eventKey = agentEventKey(payload)): void {
@@ -96,7 +102,7 @@ export class TerminalEventLedger {
       this.remember(this.turns, this.turnKey(sessionKey, payload.turnId), true, MAX_TERMINAL_TURNS);
     }
     this.activeTurns.delete(sessionKey);
-    this.recordSession(payload, eventKey, true);
+    this.recordSession(payload, eventKey, true, true);
   }
 
   clear(): void {
@@ -105,7 +111,7 @@ export class TerminalEventLedger {
     this.activeTurns.clear();
   }
 
-  private recordSession(payload: AgentEvent, eventKey: string, ended: boolean): void {
+  private recordSession(payload: AgentEvent, eventKey: string, ended: boolean, turnEnded: boolean): void {
     const sessionKey = agentSessionKey(payload);
     const existing = this.sessions.get(sessionKey);
     const eventKeys = payload.timestamp === existing?.latestTimestamp
@@ -114,6 +120,7 @@ export class TerminalEventLedger {
     eventKeys.add(eventKey);
     const terminal = {
       ended: ended || existing?.ended === true,
+      turnEnded: turnEnded || existing?.turnEnded === true,
       latestTimestamp: Math.max(payload.timestamp, existing?.latestTimestamp ?? Number.NEGATIVE_INFINITY),
       eventKeys,
     };

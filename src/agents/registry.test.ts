@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../types";
 import { codexAdapter } from "./codex";
+import { claudeCodeAdapter } from "./claude-code";
 import { AgentAdapterRegistry } from "./registry";
 import type { AgentAdapter, RawAgentEvent } from "./types";
 
 const config = {
   codex: { hooksEnabled: true, showLiveStatus: true, showTaskSummary: true },
+  claudeCode: { hooksEnabled: true, showLiveStatus: true, showTaskSummary: true },
 } as AppConfig;
 
 function raw(agent: string, event: string): RawAgentEvent {
@@ -44,6 +46,13 @@ describe("AgentAdapterRegistry", () => {
     expect(registry.isEnabled(config, "second-agent")).toBe(true);
     expect(registry.showsLiveStatus(config, "second-agent")).toBe(true);
     expect(registry.showsTaskSummary(config, "second-agent")).toBe(false);
+  });
+
+  it("normalizes Claude Code failure events independently", () => {
+    const registry = new AgentAdapterRegistry([codexAdapter, claudeCodeAdapter]);
+    expect(registry.normalize(raw("claude-code", "PostToolUseFailure"))?.event).toBe("PostToolUseFailure");
+    expect(registry.displayName("claude-code")).toBe("Claude Code");
+    expect(registry.showsLiveStatus(config, "claude-code")).toBe(true);
   });
 
   it("rejects duplicate adapter ids", () => {

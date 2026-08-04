@@ -39,6 +39,7 @@ const config = {
     bubbleScale: 1,
     bubbleOpacity: 0.94,
   },
+  claudeCode: { hooksEnabled: false, showLiveStatus: true, showTaskSummary: true },
 };
 
 const statusEvents = [
@@ -80,6 +81,7 @@ test.beforeEach(async ({ page }) => {
               path: "~/.codex/hooks.json",
               exists: true,
               valid: true,
+              globallyDisabled: false,
               installedEvents: 11,
               expectedEvents: 11,
               message: "Agent Cat Hook 已安装",

@@ -1,6 +1,9 @@
 use crate::{config, hook_installer};
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
 
 #[derive(Debug, Clone)]
 struct MemoryVerification {
@@ -32,26 +35,34 @@ struct VerificationState {
     verified_at: Option<u64>,
 }
 
-static RUNTIME_VERIFICATION: OnceLock<Mutex<RuntimeVerification>> = OnceLock::new();
+static RUNTIME_VERIFICATION: OnceLock<Mutex<HashMap<String, RuntimeVerification>>> =
+    OnceLock::new();
 
-fn path() -> Result<std::path::PathBuf, String> {
-    Ok(config::config_dir()?.join("hook-verification.json"))
+fn path(agent: &str) -> Result<std::path::PathBuf, String> {
+    let name = if agent == hook_installer::CODEX {
+        "hook-verification.json".to_string()
+    } else {
+        format!("hook-verification-{agent}.json")
+    };
+    Ok(config::config_dir()?.join(name))
 }
 
-pub fn verified_at() -> Option<u64> {
-    let fingerprint = hook_installer::verification_fingerprint().ok().flatten()?;
+pub fn verified_at(agent: &str) -> Option<u64> {
+    let fingerprint = hook_installer::verification_fingerprint(agent)
+        .ok()
+        .flatten()?;
     let runtime = RUNTIME_VERIFICATION
-        .get_or_init(|| Mutex::new(RuntimeVerification::Uninitialized))
+        .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .ok()
-        .map(|state| state.clone())
+        .and_then(|states| states.get(agent).cloned())
         .unwrap_or_default();
     match match_runtime(&runtime, &fingerprint) {
         RuntimeMatch::Verified(timestamp) => return Some(timestamp),
         RuntimeMatch::Cleared => return None,
         RuntimeMatch::Unavailable => {}
     }
-    let state = load().ok()?;
+    let state = load(agent).ok()?;
     persisted_verified_at(&state, &fingerprint)
 }
 
@@ -72,14 +83,15 @@ fn persisted_verified_at(state: &VerificationState, fingerprint: &str) -> Option
     state.verified_at
 }
 
-pub fn record(timestamp: u64) -> Result<(), String> {
-    let Some(fingerprint) = hook_installer::verification_fingerprint()? else {
+pub fn record(agent: &str, timestamp: u64) -> Result<(), String> {
+    let Some(fingerprint) = hook_installer::verification_fingerprint(agent)? else {
         return Ok(());
     };
     let verified_at = RUNTIME_VERIFICATION
-        .get_or_init(|| Mutex::new(RuntimeVerification::Uninitialized))
+        .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
-        .map(|mut state| {
+        .map(|mut states| {
+            let state = states.entry(agent.to_string()).or_default();
             let verified_at = match &*state {
                 RuntimeVerification::Verified(memory) if memory.fingerprint == fingerprint => {
                     memory.verified_at
@@ -93,30 +105,33 @@ pub fn record(timestamp: u64) -> Result<(), String> {
             verified_at
         })
         .unwrap_or(timestamp);
-    let existing = load().unwrap_or_default();
+    let existing = load(agent).unwrap_or_default();
     if existing.fingerprint.as_deref() == Some(fingerprint.as_str())
         && existing.verified_at.is_some()
     {
         return Ok(());
     }
-    save(&VerificationState {
-        fingerprint: Some(fingerprint),
-        verified_at: Some(verified_at),
-    })
+    save(
+        agent,
+        &VerificationState {
+            fingerprint: Some(fingerprint),
+            verified_at: Some(verified_at),
+        },
+    )
 }
 
-pub fn clear() -> Result<(), String> {
-    if let Ok(mut state) = RUNTIME_VERIFICATION
-        .get_or_init(|| Mutex::new(RuntimeVerification::Uninitialized))
+pub fn clear(agent: &str) -> Result<(), String> {
+    if let Ok(mut states) = RUNTIME_VERIFICATION
+        .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
     {
-        *state = RuntimeVerification::Cleared;
+        states.insert(agent.to_string(), RuntimeVerification::Cleared);
     }
-    save(&VerificationState::default())
+    save(agent, &VerificationState::default())
 }
 
-fn load() -> Result<VerificationState, String> {
-    let path = path()?;
+fn load(agent: &str) -> Result<VerificationState, String> {
+    let path = path(agent)?;
     if !path.exists() {
         return Ok(VerificationState::default());
     }
@@ -125,9 +140,9 @@ fn load() -> Result<VerificationState, String> {
     serde_json::from_slice(&bytes).map_err(|error| format!("解析 {} 失败：{error}", path.display()))
 }
 
-fn save(state: &VerificationState) -> Result<(), String> {
+fn save(agent: &str, state: &VerificationState) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(state).map_err(|error| error.to_string())?;
-    config::atomic_write(&path()?, &bytes)
+    config::atomic_write(&path(agent)?, &bytes)
 }
 
 #[cfg(test)]

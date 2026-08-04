@@ -227,4 +227,23 @@ describe("LiveStatusController", () => {
     controller.dispose();
     vi.useRealTimers();
   });
+
+  it("presents Claude Code tool and turn failures without mixing agent names", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("PostToolUseFailure", 1, { agent: "claude-code", toolName: "Bash" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      agentName: "Claude Code",
+      phase: "thinking",
+      detail: "工具 Bash 执行失败，正在调整方案",
+    });
+    controller.setAgentEvent(event("StopFailure", 2, { agent: "claude-code" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      phase: "error",
+      detail: "Claude Code 当前任务因服务错误而结束",
+    });
+    controller.dispose();
+    vi.useRealTimers();
+  });
 });

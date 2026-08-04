@@ -5,10 +5,11 @@ use std::path::Path;
 const POWERSHELL_ENCODED_PREFIX: &str =
     "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ";
 
-pub(super) fn build_hook_command(executable: &Path) -> String {
+pub(super) fn build_hook_command(executable: &Path, agent: &str) -> String {
     let script = format!(
-        "try {{ & {} hook --agent codex > $null 2>&1 }} catch {{}}; exit 0",
-        powershell_quote(&executable.to_string_lossy())
+        "try {{ & {} hook --agent {} > $null 2>&1 }} catch {{}}; exit 0",
+        powershell_quote(&executable.to_string_lossy()),
+        powershell_quote(agent)
     );
     let bytes: Vec<u8> = script
         .encode_utf16()
@@ -22,12 +23,14 @@ pub(super) fn add_platform_fields(handler: &mut Map<String, Value>, command: &st
     handler.insert("commandWindows".into(), command.into());
 }
 
-pub(super) fn is_encoded_agent_cat_command(command: &str) -> bool {
+pub(super) fn is_encoded_agent_cat_command(command: &str, agent: &str) -> bool {
     let Some(script) = decode_hook_command(command) else {
         return false;
     };
     let lower = script.to_ascii_lowercase();
-    lower.contains("agent-cat.exe") && lower.contains("hook --agent codex")
+    lower.contains("agent-cat.exe")
+        && (lower.contains(&format!("hook --agent '{agent}'"))
+            || lower.contains(&format!("hook --agent {agent}")))
 }
 
 fn decode_hook_command(command: &str) -> Option<String> {
@@ -58,7 +61,7 @@ mod tests {
     use super::*;
     use crate::hook_installer::{
         add_agent_cat_entries, command_handler, event_contains_agent_cat, remove_agent_cat_entries,
-        EVENTS,
+        HookSpec, CODEX, CODEX_EVENTS,
     };
     use serde_json::json;
 
@@ -66,10 +69,13 @@ mod tests {
 
     #[test]
     fn hook_command_uses_windows_redirection_and_quotes() {
-        let command = build_hook_command(Path::new(r"C:\Program Files\Agent Cat\agent-cat.exe"));
+        let command = build_hook_command(
+            Path::new(r"C:\Program Files\Agent Cat\agent-cat.exe"),
+            CODEX,
+        );
         assert_eq!(
             decode_hook_command(&command).unwrap(),
-            r#"try { & 'C:\Program Files\Agent Cat\agent-cat.exe' hook --agent codex > $null 2>&1 } catch {}; exit 0"#
+            r#"try { & 'C:\Program Files\Agent Cat\agent-cat.exe' hook --agent 'codex' > $null 2>&1 } catch {}; exit 0"#
         );
     }
 
@@ -82,7 +88,7 @@ mod tests {
         use std::io::Write;
         use std::process::Stdio;
 
-        let command = build_hook_command(executable);
+        let command = build_hook_command(executable, CODEX);
         let mut process = std::process::Command::new(shell);
         process.args(shell_args).arg(&command).stdin(Stdio::piped());
         if let Some(path) = output_path {
@@ -152,8 +158,8 @@ mod tests {
 
     #[test]
     fn hook_handler_uses_the_windows_override() {
-        let command = build_hook_command(Path::new(r"C:\Agent Cat\agent-cat.exe"));
-        let handler = command_handler(&command);
+        let command = build_hook_command(Path::new(r"C:\Agent Cat\agent-cat.exe"), CODEX);
+        let handler = command_handler(&command, CODEX);
         assert_eq!(
             handler.get("command").and_then(Value::as_str),
             Some(&*command)
@@ -162,26 +168,32 @@ mod tests {
             handler.get("commandWindows").and_then(Value::as_str),
             Some(&*command)
         );
-        assert!(super::super::is_agent_cat_command(&handler));
+        assert!(super::super::is_agent_cat_command(&handler, CODEX));
     }
 
     #[test]
     fn encoded_hook_install_is_idempotent_and_removable() {
         let mut root = json!({});
-        let command = build_hook_command(Path::new(r"C:\Agent Cat\agent-cat.exe"));
-        add_agent_cat_entries(&mut root, &command).unwrap();
-        add_agent_cat_entries(&mut root, &command).unwrap();
+        let command = build_hook_command(Path::new(r"C:\Agent Cat\agent-cat.exe"), CODEX);
+        let spec = HookSpec {
+            agent: CODEX,
+            display_name: "Codex",
+            path: Path::new("hooks.json").to_path_buf(),
+            events: &CODEX_EVENTS,
+        };
+        add_agent_cat_entries(&mut root, &spec, &command).unwrap();
+        add_agent_cat_entries(&mut root, &spec, &command).unwrap();
         assert_eq!(
-            EVENTS
+            CODEX_EVENTS
                 .iter()
-                .filter(|event| event_contains_agent_cat(&root, event))
+                .filter(|event| event_contains_agent_cat(&root, event, CODEX))
                 .count(),
-            EVENTS.len()
+            CODEX_EVENTS.len()
         );
 
-        remove_agent_cat_entries(&mut root);
-        assert!(EVENTS
+        remove_agent_cat_entries(&mut root, &spec);
+        assert!(CODEX_EVENTS
             .iter()
-            .all(|event| !event_contains_agent_cat(&root, event)));
+            .all(|event| !event_contains_agent_cat(&root, event, CODEX)));
     }
 }

@@ -12,7 +12,7 @@
   <a href="README.md">English</a> · 简体中文
 </p>
 
-Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前已实现 macOS 和 Windows 上的 Codex 集成。
+Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前已实现 macOS 和 Windows 上的 Codex 与 Claude Code 集成。
 
 <p align="center">
   <a href="docs/images/agent-cat-overview.png">
@@ -20,7 +20,7 @@ Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变
   </a>
 </p>
 
-> **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统和 Windows 10 及以上系统，并已集成 Codex；更多 Agent 和操作系统仍在规划中。
+> **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统和 Windows 10 及以上系统，并已集成 Codex 与 Claude Code；更多 Agent 和操作系统仍在规划中。
 
 ## 下载
 
@@ -41,11 +41,17 @@ Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变
 - 按需读取本机已有宠物资源，不复制或重新分发这些资源
 - 找不到兼容宠物包时，使用项目原创的内置 fallback 宠物
 
-## Codex 集成
+## Agent 集成
+
+### Codex
 
 Agent Cat 通过 command Hook 响应 Codex 会话。你可以在设置窗口中安装、修复、测试或卸载集成；这一过程会保留其他工具已经配置的 Hook。
 
 当前集成可识别会话开始/退出、用户提示、工具调用、子 Agent、上下文压缩、权限请求、完成和任务中断事件。实时状态和任务摘要可以分别开关。
+
+### Claude Code
+
+Agent Cat 会将 command Hook 安装到 `~/.claude/settings.json`，并保留用户已有的 Claude Code 设置和其他 Hook。当前观察 13 个与宠物状态有关的事件，覆盖会话、用户提示、工具执行与失败、子 Agent、上下文压缩、权限请求、任务完成和 API 错误。Claude Code 与 Codex 的安装、测试、暂停、修复和卸载互不影响。
 
 ## 宠物包
 
@@ -128,7 +134,7 @@ src-tauri/    Rust 后端、Tauri 配置和各平台图标
 
 ## 隐私
 
-Agent Cat 在本地处理 Codex 事件。Hook 辅助进程从 Hook 载荷中提取生命周期标识、Hook 事件名称、经过清理的工具名称和当前 transcript 路径，通过 macOS 本地 Unix Domain Socket 或 Windows 回环连接发送后立即退出。为了识别 Esc 中断，Agent Cat 仅在任务执行期间读取本地 transcript 新增记录，并在检查生命周期元数据后丢弃原始记录。
+Agent Cat 在本地处理 Codex 与 Claude Code 事件。Hook 辅助进程从载荷中提取生命周期标识、Hook 事件名称和经过清理的工具名称，通过 macOS 本地 Unix Domain Socket 或 Windows 回环连接发送后立即退出。仅对 Codex，为识别 Esc 中断还会接收当前 transcript 路径，只在任务执行期间读取新增记录，并在检查生命周期元数据后丢弃原始记录；Agent Cat 不观察 Claude Code transcript。
 
 开启任务摘要后，Agent Cat 只在内存中保留用户提示的首个非空行，最多 80 个字符，用于实时展示。摘要不会写入配置、日志或历史记录。
 

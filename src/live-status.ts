@@ -31,6 +31,9 @@ export function sanitizeStatusText(value: string | undefined, maxCharacters = 80
 
 function toolDetail(event: string, toolName?: string): string {
   const completed = event === "PostToolUse";
+  if (event === "PostToolUseFailure") return toolName
+    ? `工具 ${toolName} 执行失败，正在调整方案`
+    : "工具执行失败，正在调整方案";
   switch (toolName) {
     case "Bash": return completed ? "Bash 命令执行完成，正在分析结果" : "Bash 命令已开始执行";
     case "apply_patch": return completed ? "代码修改已完成，正在检查结果" : "正在通过 apply_patch 修改代码";
@@ -78,6 +81,7 @@ function eventPresentation(payload: AgentEvent): EventPresentation | null {
     case "UserPromptSubmit": return active("thinking", "已收到新任务，正在分析需求");
     case "PreToolUse": return active("tool", toolDetail(payload.event, payload.toolName));
     case "PostToolUse": return active("thinking", toolDetail(payload.event, payload.toolName));
+    case "PostToolUseFailure": return active("thinking", toolDetail(payload.event, payload.toolName));
     case "SubagentStart": return active("tool", "子 Agent 已启动，正在协作处理任务");
     case "SubagentStop": return active("thinking", "子 Agent 已结束，正在整合协作结果");
     case "PreCompact": return active("thinking", "上下文压缩已开始，正在整理会话");
@@ -86,6 +90,7 @@ function eventPresentation(payload: AgentEvent): EventPresentation | null {
       : active("thinking", "自动上下文压缩已完成，正在继续任务");
     case "PermissionRequest": return active("waiting", `${agentName} 请求操作确认，请返回 ${agentName} 处理`);
     case "Stop": return transient("done", `${agentName} 已完成当前任务`, TASK_DONE_TIMEOUT_MS);
+    case "StopFailure": return transient("error", `${agentName} 当前任务因服务错误而结束`, ERROR_TIMEOUT_MS);
     case "SessionEnd": return transient("done", `${agentName} 会话已退出`, SESSION_END_TIMEOUT_MS);
     case "TurnInterrupted": return transient("interrupted", "当前任务已被中断", INTERRUPTED_TIMEOUT_MS);
     case "HookParseError": return transient("error", `Agent Cat 无法解析最新的 ${agentName} 状态`, ERROR_TIMEOUT_MS);
@@ -122,7 +127,7 @@ export class LiveStatusController {
     latestEventKeys.add(eventKey);
     this.latestEvents.set(sessionKey, { timestamp: payload.timestamp, keys: latestEventKeys });
     this.terminalEvents.recordActivity(payload);
-    if (payload.event === "Stop" || payload.event === "TurnInterrupted") {
+    if (payload.event === "Stop" || payload.event === "StopFailure" || payload.event === "TurnInterrupted") {
       this.terminalEvents.recordTurn(payload, eventKey);
     } else if (payload.event === "SessionEnd") {
       this.terminalEvents.recordSessionEnd(payload, eventKey);

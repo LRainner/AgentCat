@@ -39,6 +39,15 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
+  it("shows a failure reaction when a Claude Code turn fails", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "PreToolUse", timestamp: 1 });
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "StopFailure", timestamp: 2 });
+    expect(calls.at(-1)).toBe("failed");
+    vi.useRealTimers();
+  });
+
   it("ignores duplicate and late events after completion", () => {
     vi.useFakeTimers();
     const { calls, controller } = harness();
