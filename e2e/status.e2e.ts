@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const config = {
   version: 1,
@@ -50,7 +50,7 @@ const events = [
   },
 ];
 
-test.beforeEach(async ({ page }) => {
+async function mockStatusWindow(page: Page, mockConfig = config): Promise<void> {
   await page.addInitScript(({ mockConfig, mockEvents }) => {
     let callbackId = 0;
     let eventIndex = 0;
@@ -83,10 +83,11 @@ test.beforeEach(async ({ page }) => {
       },
       configurable: true,
     });
-  }, { mockConfig: config, mockEvents: events });
-});
+  }, { mockConfig, mockEvents: events });
+}
 
 test("shows each agent source immediately to the left of its status indicator", async ({ page }) => {
+  await mockStatusWindow(page);
   await page.goto("/status.html");
   await expect(page.locator(".status-card")).toHaveCount(2);
 
@@ -106,4 +107,16 @@ test("shows each agent source immediately to the left of its status indicator", 
     expect(sourceBox!.x + sourceBox!.width).toBeLessThan(indicatorBox!.x);
     expect(sourceBox!.y).toBeGreaterThan(indicatorBox!.y + indicatorBox!.height / 2);
   }
+});
+
+test("does not repeat the agent source when task summaries are hidden", async ({ page }) => {
+  await mockStatusWindow(page, {
+    ...config,
+    codex: { ...config.codex, showTaskSummary: false },
+  });
+  await page.goto("/status.html");
+
+  const card = page.locator('.status-card[data-session-id="codex-session"]');
+  await expect(card.locator(".status-title")).toHaveText("Codex");
+  await expect(card.locator(".status-source")).toBeHidden();
 });

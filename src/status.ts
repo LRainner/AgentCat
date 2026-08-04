@@ -74,11 +74,12 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
     card.style.setProperty("--stack-expanded-y", `${-index * EXPANDED_OFFSET}px`);
     card.style.setProperty("--stack-scale", String(Math.max(0.94, 1 - index * 0.012)));
     card.style.zIndex = String(statuses.length - index);
-    card.querySelector<HTMLElement>(".status-title")!.textContent = showsAgentTaskSummary(config, status.agent)
-      ? status.title
-      : status.agentName;
+    const showTaskSummary = showsAgentTaskSummary(config, status.agent);
+    card.querySelector<HTMLElement>(".status-title")!.textContent = showTaskSummary ? status.title : status.agentName;
     card.querySelector<HTMLElement>(".status-detail")!.textContent = status.detail;
-    card.querySelector<HTMLElement>(".status-source")!.textContent = status.agentName;
+    const source = card.querySelector<HTMLElement>(".status-source")!;
+    source.hidden = !showTaskSummary;
+    source.textContent = showTaskSummary ? status.agentName : "";
   });
 
   shell.dataset.expanded = String(expanded);
