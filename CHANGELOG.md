@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/LRainner/AgentCat/compare/v1.5.2...v1.6.0) (2026-08-04)
+
+
+### Features
+
+* add Claude Code integration and unified agent settings ([#37](https://github.com/LRainner/AgentCat/issues/37)) ([f8a15bb](https://github.com/LRainner/AgentCat/commit/f8a15bbf3c468ea180a205707202e612ff1a0877))
+
 ## [1.5.2](https://github.com/LRainner/AgentCat/compare/v1.5.1...v1.5.2) (2026-08-01)
 
 
