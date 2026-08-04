@@ -70,4 +70,34 @@ describe("TerminalEventLedger", () => {
     ledger.recordActivity(nextPrompt);
     expect(ledger.shouldIgnore(claudeEvent("PreToolUse", 5))).toBe(false);
   });
+
+  it("rejects a stale prompt after a turn ended without a turn id", () => {
+    const ledger = new TerminalEventLedger();
+    const claudeEvent = (name: AgentEventName, timestamp: number): AgentEvent => ({
+      version: 1,
+      agent: "claude-code",
+      sessionId: "session",
+      event: name,
+      timestamp,
+    });
+    ledger.recordTurn(claudeEvent("Stop", 10));
+    // 迟到的旧 UserPromptSubmit：时间戳早于回合结束时间，必须被忽略，
+    // 否则 recordActivity 会清掉 turnEnded，放行后续迟到的 PostToolUse。
+    expect(ledger.shouldIgnore(claudeEvent("UserPromptSubmit", 1))).toBe(true);
+    expect(ledger.shouldIgnore(claudeEvent("PostToolUse", 2))).toBe(true);
+  });
+
+  it("rejects a stale session start after a turn ended without a turn id", () => {
+    const ledger = new TerminalEventLedger();
+    const claudeEvent = (name: AgentEventName, timestamp: number): AgentEvent => ({
+      version: 1,
+      agent: "claude-code",
+      sessionId: "session",
+      event: name,
+      timestamp,
+    });
+    ledger.recordTurn(claudeEvent("Stop", 10));
+    expect(ledger.shouldIgnore(claudeEvent("SessionStart", 1))).toBe(true);
+    expect(ledger.shouldIgnore(claudeEvent("PostToolUse", 2))).toBe(true);
+  });
 });

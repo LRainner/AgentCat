@@ -45,6 +45,7 @@ export class TerminalEventLedger {
       return true;
     }
     if (terminalSession?.turnEnded && !payload.turnId) {
+      if (payload.timestamp < terminalSession.latestTimestamp) return true;
       if (startsSession || payload.event === "UserPromptSubmit" || payload.event === "SessionEnd") return false;
       return true;
     }
