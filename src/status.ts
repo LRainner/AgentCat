@@ -60,7 +60,10 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
         <div class="status-card-surface">
           <div class="status-copy">
             <div class="status-title"></div>
-            <div class="status-detail"></div>
+            <div class="status-meta-row">
+              <div class="status-detail"></div>
+              <span class="status-source"></span>
+            </div>
           </div>
           <span class="status-indicator" aria-hidden="true"></span>
         </div>`;
@@ -75,6 +78,7 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
       ? status.title
       : status.agentName;
     card.querySelector<HTMLElement>(".status-detail")!.textContent = status.detail;
+    card.querySelector<HTMLElement>(".status-source")!.textContent = status.agentName;
   });
 
   shell.dataset.expanded = String(expanded);
