@@ -87,6 +87,14 @@ pub fn supports_event(agent: &str, event: &str) -> bool {
     }
 }
 
+pub(crate) fn transcript_root(agent: &str) -> Result<Option<PathBuf>, String> {
+    match agent {
+        CODEX => Ok(None),
+        CLAUDE_CODE => claude_code::resolved_config_root().map(Some),
+        _ => Err(format!("不支持的 Agent：{agent}")),
+    }
+}
+
 pub fn status(agent: &str) -> Result<HookStatus, String> {
     let spec = spec(agent)?;
     let path = &spec.path;

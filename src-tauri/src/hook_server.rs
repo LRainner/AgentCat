@@ -13,7 +13,7 @@ use std::{
 };
 use tauri::AppHandle;
 
-mod rollout_observer;
+mod transcript_observer;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -107,12 +107,15 @@ pub fn run_cli_hook(agent: &str) {
                 hook_installer::CLAUDE_CODE => value.claude_code.show_task_summary,
                 _ => false,
             });
-        let transcript_path = (agent == hook_installer::CODEX
-            && app_config
-                .as_ref()
-                .is_some_and(|value| value.codex.hooks_enabled))
-        .then(|| input.transcript_path.clone())
-        .flatten();
+        let transcript_path = app_config
+            .as_ref()
+            .is_some_and(|value| match agent.as_str() {
+                hook_installer::CODEX => value.codex.hooks_enabled,
+                hook_installer::CLAUDE_CODE => value.claude_code.hooks_enabled,
+                _ => false,
+            })
+            .then(|| input.transcript_path.clone())
+            .flatten();
         let event = build_event(&agent, input, show_task_summary, now_ms())?;
         let mut stream = transport::connect(&socket_path()?)?;
         stream
@@ -143,7 +146,7 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
         return Ok(false);
     }
     let listener = transport::bind(&socket)?;
-    rollout_observer::start(app.clone())?;
+    transcript_observer::start(app.clone())?;
     OWNS_SOCKET.store(true, Ordering::Release);
     RECEIVER_RUNNING.store(true, Ordering::Release);
     let spawn_result = std::thread::Builder::new()
@@ -159,12 +162,10 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
                     .map(|_| decode_wire_payload(&bytes))
                 {
                     Ok(Ok(Some(payload))) => {
-                        if payload.event.agent == hook_installer::CODEX {
-                            rollout_observer::handle_hook_event(
-                                &payload.event,
-                                payload.transcript_path.as_deref(),
-                            );
-                        }
+                        transcript_observer::handle_hook_event(
+                            &payload.event,
+                            payload.transcript_path.as_deref(),
+                        );
                         emit_event(&app, payload.event);
                     }
                     Ok(Ok(None)) => {}
@@ -180,7 +181,7 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
         .map_err(|error| format!("启动 Hook 服务失败：{error}"));
     if spawn_result.is_err() {
         RECEIVER_RUNNING.store(false, Ordering::Release);
-        rollout_observer::cleanup();
+        transcript_observer::cleanup();
         cleanup_owned_socket();
     }
     spawn_result.map(|_| true)
@@ -188,12 +189,12 @@ pub fn start(app: AppHandle) -> Result<bool, String> {
 
 pub fn cleanup() {
     RECEIVER_RUNNING.store(false, Ordering::Release);
-    rollout_observer::cleanup();
+    transcript_observer::cleanup();
     cleanup_owned_socket();
 }
 
-pub fn set_hooks_enabled(enabled: bool) {
-    rollout_observer::set_enabled(enabled);
+pub fn sync_transcript_observers(codex_enabled: bool, claude_code_enabled: bool) {
+    transcript_observer::sync_enabled_agents(codex_enabled, claude_code_enabled);
 }
 
 fn cleanup_owned_socket() {

@@ -13,6 +13,7 @@ const EVENTS = new Set<AgentEventName>([
   "PermissionRequest",
   "Stop",
   "StopFailure",
+  "TurnInterrupted",
   "SessionEnd",
   "HookParseError",
 ]);

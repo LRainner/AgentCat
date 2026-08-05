@@ -146,6 +146,25 @@ describe("LiveStatusController", () => {
     vi.useRealTimers();
   });
 
+  it("ends a Claude Code turn without requiring a turn id", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("UserPromptSubmit", 1, { agent: "claude-code", turnId: undefined }));
+    controller.setAgentEvent(event("TurnInterrupted", 2, { agent: "claude-code", turnId: undefined }));
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      agent: "claude-code",
+      phase: "interrupted",
+      detail: "当前任务已被中断",
+    });
+    controller.setAgentEvent(event("PostToolUse", 3, { agent: "claude-code", turnId: undefined }));
+    expect(updates.at(-1)?.[0]?.phase).toBe("interrupted");
+    controller.setAgentEvent(event("UserPromptSubmit", 4, { agent: "claude-code", turnId: undefined }));
+    expect(updates.at(-1)?.[0]?.phase).toBe("thinking");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
   it("ignores an old interruption after a newer turn is active", () => {
     vi.useFakeTimers();
     const updates: AgentLiveStatus[][] = [];

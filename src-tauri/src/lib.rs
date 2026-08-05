@@ -80,7 +80,10 @@ fn get_config() -> Result<AppConfig, String> {
 fn save_config(app: tauri::AppHandle, mut value: AppConfig) -> Result<(), String> {
     capture_main_position(&app, &mut value.window)?;
     config::save(&value)?;
-    hook_server::set_hooks_enabled(value.codex.hooks_enabled);
+    hook_server::sync_transcript_observers(
+        value.codex.hooks_enabled,
+        value.claude_code.hooks_enabled,
+    );
     Ok(())
 }
 
