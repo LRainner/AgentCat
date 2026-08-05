@@ -55,6 +55,11 @@ describe("AgentAdapterRegistry", () => {
     expect(registry.showsLiveStatus(config, "claude-code")).toBe(true);
   });
 
+  it("accepts transcript-derived Claude Code interruptions", () => {
+    const registry = new AgentAdapterRegistry([codexAdapter, claudeCodeAdapter]);
+    expect(registry.normalize(raw("claude-code", "TurnInterrupted"))?.event).toBe("TurnInterrupted");
+  });
+
   it("rejects duplicate adapter ids", () => {
     const registry = new AgentAdapterRegistry([codexAdapter]);
     expect(() => registry.register(codexAdapter)).toThrow("Agent adapter already registered: codex");

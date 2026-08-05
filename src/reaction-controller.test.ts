@@ -100,6 +100,20 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
+  it("returns a Claude Code session without a turn id to idle after interruption", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "UserPromptSubmit", timestamp: 1 });
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "TurnInterrupted", timestamp: 2 });
+    expect(calls.at(-1)).toBe("idle");
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "PostToolUse", timestamp: 3 });
+    expect(calls.at(-1)).toBe("idle");
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "UserPromptSubmit", timestamp: 4 });
+    expect(calls.at(-1)).toBe("running");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
   it("does not reactivate an interrupted turn but accepts a different turn", () => {
     vi.useFakeTimers();
     const { calls, controller } = harness();
