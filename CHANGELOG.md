@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0](https://github.com/LRainner/AgentCat/compare/v1.6.0...v1.7.0) (2026-08-05)
+
+
+### Features
+
+* **status:** show agent source in live bubbles ([#39](https://github.com/LRainner/AgentCat/issues/39)) ([9aad9c3](https://github.com/LRainner/AgentCat/commit/9aad9c324414105cdca16881b212195306b1001c))
+
+
+### Bug Fixes
+
+* **claude:** detect interrupted turns reliably ([#41](https://github.com/LRainner/AgentCat/issues/41)) ([5493c2b](https://github.com/LRainner/AgentCat/commit/5493c2b51d5595c0b0fffb27e7189067ab07dbc3))
+
 ## [1.6.0](https://github.com/LRainner/AgentCat/compare/v1.5.2...v1.6.0) (2026-08-04)
 
 
