@@ -27,7 +27,7 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 #status-shell { position: absolute; bottom: 0; left: 0; width: 400px; height: var(--content-height, 96px); zoom: var(--bubble-scale, 1); }
 #live-status { position: absolute; inset: 0; padding: 8px 10px 12px; }
 #status-stack { position: absolute; inset: 0; }
-#status-toggle { position: absolute; inset: 0; z-index: 1000; padding: 0; border: 0; border-radius: 22px; outline: none; background: transparent; cursor: pointer; transition: none; }
+#status-toggle { position: absolute; inset: 0; z-index: 1000; padding: 0; border: 0; border-radius: 22px; outline: none; background: transparent; pointer-events: none; cursor: pointer; transition: none; }
 #status-toggle:hover { filter: none; transform: none; }
 #status-toggle:focus-visible { outline: 2px solid #4a90d9; outline-offset: -3px; }
 .status-card {
@@ -39,10 +39,13 @@ button.compact { padding: 6px 10px; font-size: 12px; }
   transform: translateY(var(--stack-collapsed-y, 0)) scale(var(--stack-scale, 1));
   transform-origin: bottom center;
   transition: transform 320ms cubic-bezier(.22, 1, .36, 1), filter 220ms ease;
-  pointer-events: none;
+  pointer-events: auto;
 }
+#status-shell[data-expanded="false"] .status-card:not([data-stack-index="0"]) { pointer-events: none; }
 #status-shell[data-expanded="true"] .status-card { transform: translateY(var(--stack-expanded-y, 0)) scale(1); }
+.status-card.is-leaving { pointer-events: none; }
 .status-card-surface {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -57,12 +60,47 @@ button.compact { padding: 6px 10px; font-size: 12px; }
   box-shadow: 0 4px 10px #263b4218, inset 0 1px 0 #ffffffd9;
   animation: status-card-in 260ms cubic-bezier(.22, 1, .36, 1) both;
 }
+.status-card.is-leaving .status-card-surface { animation: status-card-out 180ms cubic-bezier(.4, 0, 1, 1) both; }
 .status-copy { min-width: 0; flex: 1; }
 .status-title, .status-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-title { font-size: 16px; line-height: 1.25; font-weight: 720; letter-spacing: -.015em; }
 .status-meta-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-top: 4px; }
 .status-detail { min-width: 0; flex: 1; color: #697174; font-size: 13px; line-height: 1.2; font-weight: 480; }
 .status-source { flex: 0 0 auto; color: #8a9293; font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .01em; white-space: nowrap; }
+.status-dismiss {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(72 84 88 / 18%);
+  border-radius: 50%;
+  color: #899193;
+  background: rgb(247 248 246 / var(--bubble-opacity, .92));
+  box-shadow: 0 2px 5px #263b4218;
+  opacity: 0;
+  pointer-events: none;
+  transform: none;
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+.status-dismiss::before,
+.status-dismiss::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.status-dismiss::before { transform: translate(-50%, -50%) rotate(45deg); }
+.status-dismiss::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.status-card:hover .status-dismiss,
+.status-dismiss:focus-visible { opacity: 1; pointer-events: auto; }
+.status-dismiss:hover { color: #535c5e; background: rgb(212 218 215 / 92%); filter: none; transform: none; }
+.status-dismiss:focus-visible { outline: 2px solid #738184; outline-offset: 1px; }
 .status-indicator {
   position: relative;
   flex: 0 0 34px;
@@ -90,6 +128,7 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 @keyframes status-spin { to { transform: rotate(360deg); } }
 @keyframes status-pulse { 0%, 100% { transform: scale(.86); opacity: .72; } 50% { transform: scale(1); opacity: 1; } }
 @keyframes status-card-in { from { opacity: 0; transform: translateY(8px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes status-card-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(5px) scale(.97); } }
 
 /* Original fallback matching the B app icon; independent of Codex artwork. */
 #fallback-cat { position: absolute; inset: 0; display: grid; place-items: center; transform-origin: 50% 78%; animation: fallback-breathe 2.2s ease-in-out infinite; }

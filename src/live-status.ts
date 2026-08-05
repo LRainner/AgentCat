@@ -101,6 +101,7 @@ function eventPresentation(payload: AgentEvent): EventPresentation | null {
 export class LiveStatusController {
   private readonly titles = new Map<string, string>();
   private readonly latestEvents = new Map<string, { timestamp: number; keys: Set<string> }>();
+  private readonly dismissedSessions = new Set<string>();
   private readonly terminalEvents = new TerminalEventLedger();
   private readonly sessions = new Map<string, {
     status: AgentLiveStatus;
@@ -126,6 +127,12 @@ export class LiveStatusController {
       : new Set<string>();
     latestEventKeys.add(eventKey);
     this.latestEvents.set(sessionKey, { timestamp: payload.timestamp, keys: latestEventKeys });
+    if (
+      payload.event === "UserPromptSubmit"
+      || (payload.event === "SessionStart" && payload.sessionSource !== "compact")
+    ) {
+      this.dismissedSessions.delete(sessionKey);
+    }
     this.terminalEvents.recordActivity(payload);
     if (payload.event === "Stop" || payload.event === "StopFailure" || payload.event === "TurnInterrupted") {
       this.terminalEvents.recordTurn(payload, eventKey);
@@ -166,8 +173,15 @@ export class LiveStatusController {
 
   getStatuses(): AgentLiveStatus[] {
     return [...this.sessions.values()]
+      .filter(({ status }) => !this.dismissedSessions.has(status.sessionKey))
       .sort((left, right) => right.updateOrder - left.updateOrder)
       .map(({ status }) => status);
+  }
+
+  dismiss(sessionKey: string): void {
+    if (!this.sessions.has(sessionKey) || this.dismissedSessions.has(sessionKey)) return;
+    this.dismissedSessions.add(sessionKey);
+    this.emitChange();
   }
 
   clear(sessionKey?: string): void {
@@ -178,11 +192,13 @@ export class LiveStatusController {
       this.sessions.delete(sessionKey);
       this.titles.delete(sessionKey);
       this.latestEvents.delete(sessionKey);
+      this.dismissedSessions.delete(sessionKey);
     } else {
       for (const session of this.sessions.values()) globalThis.clearTimeout(session.timeoutTimer);
       this.sessions.clear();
       this.titles.clear();
       this.latestEvents.clear();
+      this.dismissedSessions.clear();
     }
     this.emitChange();
   }
