@@ -6,7 +6,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex, OnceLock,
     },
     time::{Duration, Instant},
@@ -40,7 +40,9 @@ struct ObserverRuntime {
     entries: Arc<Mutex<HashMap<String, WatchEntry>>>,
 }
 
+#[derive(Clone)]
 struct WatchEntry {
+    revision: u64,
     agent: String,
     session_id: String,
     transcript_path: Option<PathBuf>,
@@ -56,6 +58,7 @@ struct WatchEntry {
 }
 
 static OBSERVER: OnceLock<ObserverRuntime> = OnceLock::new();
+static NEXT_WATCH_REVISION: AtomicU64 = AtomicU64::new(1);
 
 pub(super) fn start(app: AppHandle) -> Result<(), String> {
     let runtime = OBSERVER.get_or_init(|| ObserverRuntime {
@@ -138,6 +141,7 @@ pub(super) fn handle_hook_event(event: &AgentEvent, transcript_path: Option<&Pat
             entry.partial_line.clear();
             entry.discarding_line = false;
             entry.idle_observed_at = None;
+            touch(entry);
         }
         return;
     }
@@ -183,6 +187,7 @@ pub(super) fn handle_hook_event(event: &AgentEvent, transcript_path: Option<&Pat
         }
     }
     let entry = entries.entry(watch_key).or_insert_with(|| WatchEntry {
+        revision: next_watch_revision(),
         agent: event.agent.clone(),
         session_id: event.session_id.clone(),
         transcript_path: transcript_path.clone(),
@@ -196,6 +201,7 @@ pub(super) fn handle_hook_event(event: &AgentEvent, transcript_path: Option<&Pat
         idle_observed_at: None,
         active: false,
     });
+    touch(entry);
     if transcript_path.is_some() && entry.transcript_path != transcript_path {
         entry.transcript_path = transcript_path;
         entry.offset = current_len;
@@ -245,35 +251,66 @@ fn observe(
 ) {
     while running.load(Ordering::Acquire) {
         std::thread::sleep(POLL_INTERVAL);
-        if let Ok(mut entries) = entries.lock() {
-            for entry in entries.values_mut() {
-                if !entry.active {
-                    continue;
+        let snapshots = match entries.lock() {
+            Ok(entries) => entries
+                .iter()
+                .filter(|(_, entry)| entry.active)
+                .map(|(watch_key, entry)| (watch_key.clone(), entry.revision, entry.clone()))
+                .collect::<Vec<_>>(),
+            Err(_) => continue,
+        };
+        for (watch_key, revision, mut snapshot) in snapshots {
+            let terminal = poll_entry(&mut snapshot);
+            let event = match entries.lock() {
+                Ok(mut entries) => {
+                    commit_poll_result(&mut entries, &watch_key, revision, snapshot, terminal)
                 }
-                if let Some(terminal) = poll_entry(entry) {
-                    mark_terminal(entry, terminal.turn_id.as_deref());
-                    emit_event(
-                        &app,
-                        AgentEvent {
-                            version: 1,
-                            agent: entry.agent.clone(),
-                            session_id: entry.session_id.clone(),
-                            event: match terminal.kind {
-                                TranscriptTerminalKind::Completed => "Stop".into(),
-                                TranscriptTerminalKind::Interrupted => "TurnInterrupted".into(),
-                            },
-                            timestamp: now_ms(),
-                            title: None,
-                            tool_name: None,
-                            turn_id: terminal.turn_id,
-                            session_source: None,
-                            compact_trigger: None,
-                        },
-                    );
-                }
+                Err(_) => None,
+            };
+            if let Some(event) = event {
+                emit_event(&app, event);
             }
         }
     }
+}
+
+fn commit_poll_result(
+    entries: &mut HashMap<String, WatchEntry>,
+    watch_key: &str,
+    revision: u64,
+    snapshot: WatchEntry,
+    terminal: Option<TranscriptTerminal>,
+) -> Option<AgentEvent> {
+    let entry = entries.get_mut(watch_key)?;
+    if !entry.active || entry.revision != revision {
+        return None;
+    }
+    apply_poll_state(entry, snapshot);
+    let terminal = terminal?;
+    mark_terminal(entry, terminal.turn_id.as_deref());
+    Some(AgentEvent {
+        version: 1,
+        agent: entry.agent.clone(),
+        session_id: entry.session_id.clone(),
+        event: match terminal.kind {
+            TranscriptTerminalKind::Completed => "Stop".into(),
+            TranscriptTerminalKind::Interrupted => "TurnInterrupted".into(),
+        },
+        timestamp: now_ms(),
+        title: None,
+        tool_name: None,
+        turn_id: terminal.turn_id,
+        session_source: None,
+        compact_trigger: None,
+    })
+}
+
+fn apply_poll_state(entry: &mut WatchEntry, snapshot: WatchEntry) {
+    entry.offset = snapshot.offset;
+    entry.partial_line = snapshot.partial_line;
+    entry.discarding_line = snapshot.discarding_line;
+    entry.claude_session_path = snapshot.claude_session_path;
+    entry.idle_observed_at = snapshot.idle_observed_at;
 }
 
 fn is_terminal_turn(entry: &WatchEntry, turn_id: &str) -> bool {
@@ -302,6 +339,15 @@ fn mark_terminal(entry: &mut WatchEntry, turn_id: Option<&str>) {
     entry.partial_line.clear();
     entry.discarding_line = false;
     entry.idle_observed_at = None;
+    touch(entry);
+}
+
+fn touch(entry: &mut WatchEntry) {
+    entry.revision = next_watch_revision();
+}
+
+fn next_watch_revision() -> u64 {
+    NEXT_WATCH_REVISION.fetch_add(1, Ordering::Relaxed)
 }
 
 fn poll_entry(entry: &mut WatchEntry) -> Option<TranscriptTerminal> {
@@ -431,6 +477,7 @@ mod tests {
 
     fn entry(turn_id: Option<&str>) -> WatchEntry {
         WatchEntry {
+            revision: next_watch_revision(),
             agent: hook_installer::CODEX.into(),
             session_id: "session-1".into(),
             transcript_path: None,
@@ -479,6 +526,7 @@ mod tests {
         .unwrap();
         let path = codex::validate_path(&path, "session-1").unwrap();
         let mut entry = WatchEntry {
+            revision: next_watch_revision(),
             agent: hook_installer::CODEX.into(),
             session_id: "session-1".into(),
             offset: path.metadata().unwrap().len(),
@@ -524,6 +572,7 @@ mod tests {
         std::fs::write(&path, b"").unwrap();
         let path = codex::validate_path(&path, "session-1").unwrap();
         let mut entry = WatchEntry {
+            revision: next_watch_revision(),
             agent: hook_installer::CODEX.into(),
             session_id: "session-1".into(),
             offset: 0,
@@ -572,6 +621,32 @@ mod tests {
     }
 
     #[test]
+    fn discards_polled_state_when_a_hook_updates_the_entry() {
+        let watch_key = watch_key(hook_installer::CODEX, "session-1");
+        let current = entry(Some("turn-1"));
+        let revision = current.revision;
+        let mut snapshot = current.clone();
+        snapshot.offset = 42;
+        let mut entries = HashMap::from([(watch_key.clone(), current)]);
+        touch(entries.get_mut(&watch_key).unwrap());
+
+        assert!(commit_poll_result(
+            &mut entries,
+            &watch_key,
+            revision,
+            snapshot,
+            Some(TranscriptTerminal {
+                kind: TranscriptTerminalKind::Interrupted,
+                turn_id: Some("turn-1".into()),
+            }),
+        )
+        .is_none());
+        let current = entries.get(&watch_key).unwrap();
+        assert_eq!(current.offset, 0);
+        assert!(current.active);
+    }
+
+    #[test]
     fn treats_claude_idle_without_a_terminal_hook_as_interrupted_after_grace() {
         let root = std::env::temp_dir().join(format!(
             "agent-cat-claude-idle-observer-{}-{}",
@@ -586,6 +661,7 @@ mod tests {
         )
         .unwrap();
         let mut entry = WatchEntry {
+            revision: next_watch_revision(),
             agent: hook_installer::CLAUDE_CODE.into(),
             session_id: "session-1".into(),
             transcript_path: None,
@@ -627,6 +703,7 @@ mod tests {
         )
         .unwrap();
         let mut entry = WatchEntry {
+            revision: next_watch_revision(),
             agent: hook_installer::CLAUDE_CODE.into(),
             session_id: "session-1".into(),
             transcript_path: None,
