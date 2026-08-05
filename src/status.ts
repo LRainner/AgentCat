@@ -25,13 +25,51 @@ let renderQueue = Promise.resolve();
 const COLLAPSED_HEIGHT = 96;
 const COLLAPSED_OFFSET = 8;
 const EXPANDED_OFFSET = 80;
+const CARD_EXIT_FALLBACK_MS = 240;
 
 function contentHeight(count: number): number {
   if (count <= 1) return COLLAPSED_HEIGHT;
   return COLLAPSED_HEIGHT + (count - 1) * (expanded ? EXPANDED_OFFSET : COLLAPSED_OFFSET);
 }
 
+function animateCardRemoval(card: HTMLElement): Promise<void> {
+  const surface = card.querySelector<HTMLElement>(".status-card-surface");
+  if (!surface) {
+    card.remove();
+    return Promise.resolve();
+  }
+
+  card.classList.add("is-leaving");
+  const dismiss = card.querySelector<HTMLButtonElement>(".status-dismiss");
+  if (dismiss) dismiss.disabled = true;
+  return new Promise((resolve) => {
+    let fallbackTimer = 0;
+    const finish = (): void => {
+      window.clearTimeout(fallbackTimer);
+      surface.removeEventListener("animationend", handleAnimationEnd);
+      card.remove();
+      resolve();
+    };
+    const handleAnimationEnd = (event: AnimationEvent): void => {
+      if (event.animationName === "status-card-out") finish();
+    };
+    surface.addEventListener("animationend", handleAnimationEnd);
+    fallbackTimer = window.setTimeout(finish, CARD_EXIT_FALLBACK_MS);
+  });
+}
+
 async function render(statuses: AgentLiveStatus[]): Promise<void> {
+  const existingCards = new Map(
+    [...stack.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionKey ?? "", card]),
+  );
+  const activeIds = new Set(statuses.map(({ sessionKey }) => sessionKey));
+  const removedCards = [...existingCards]
+    .filter(([sessionKey]) => !activeIds.has(sessionKey))
+    .map(([, card]) => card);
+  if (removedCards.length > 0) {
+    await Promise.all(removedCards.map(animateCardRemoval));
+  }
+
   if (!statuses.length) {
     expanded = false;
     shell.hidden = true;
@@ -40,14 +78,6 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
   }
 
   if (statuses.length === 1) expanded = false;
-  const existingCards = new Map(
-    [...stack.querySelectorAll<HTMLElement>(".status-card")].map((card) => [card.dataset.sessionKey ?? "", card]),
-  );
-  const activeIds = new Set(statuses.map(({ sessionKey }) => sessionKey));
-  for (const [sessionKey, card] of existingCards) {
-    if (!activeIds.has(sessionKey)) card.remove();
-  }
-
   statuses.forEach((status, index) => {
     let card = existingCards.get(status.sessionKey);
     if (!card) {
@@ -66,10 +96,12 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
             </div>
           </div>
           <span class="status-indicator" aria-hidden="true"></span>
+          <button class="status-dismiss" type="button" aria-label="隐藏当前任务状态" title="隐藏当前任务状态"></button>
         </div>`;
       stack.append(card);
     }
     card.dataset.phase = status.phase;
+    card.dataset.stackIndex = String(index);
     card.style.setProperty("--stack-collapsed-y", `${-index * COLLAPSED_OFFSET}px`);
     card.style.setProperty("--stack-expanded-y", `${-index * EXPANDED_OFFSET}px`);
     card.style.setProperty("--stack-scale", String(Math.max(0.94, 1 - index * 0.012)));
@@ -80,6 +112,9 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
     const source = card.querySelector<HTMLElement>(".status-source")!;
     source.hidden = !showTaskSummary;
     source.textContent = showTaskSummary ? status.agentName : "";
+    const dismiss = card.querySelector<HTMLButtonElement>(".status-dismiss")!;
+    dismiss.setAttribute("aria-label", `隐藏 ${status.agentName} 当前任务状态`);
+    dismiss.title = `隐藏 ${status.agentName} 当前任务状态`;
   });
 
   shell.dataset.expanded = String(expanded);
@@ -141,10 +176,24 @@ void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
 });
 void listen("agent-cat-config-changed", () => void loadConfig());
 window.addEventListener("beforeunload", () => controller.dispose());
-toggle.addEventListener("click", () => {
+function toggleStack(): void {
   if (controller.getStatuses().length < 2) return;
   expanded = !expanded;
   queueRender();
+}
+
+toggle.addEventListener("click", toggleStack);
+stack.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const card = target.closest<HTMLElement>(".status-card");
+  if (!card) return;
+  if (target.closest(".status-dismiss")) {
+    const sessionKey = card.dataset.sessionKey;
+    if (sessionKey) controller.dismiss(sessionKey);
+    return;
+  }
+  toggleStack();
 });
 void loadConfig();
 window.setInterval(async () => {

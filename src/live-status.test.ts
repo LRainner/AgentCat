@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { LiveStatusController, sanitizeStatusText } from "./live-status";
 import type { AgentEvent, AgentLiveStatus } from "./types";
-import type { AgentEventName } from "./agents";
+import { agentSessionKey, type AgentEventName } from "./agents";
 
 function event(name: AgentEventName, timestamp: number, extras: Partial<AgentEvent> = {}): AgentEvent {
   return { version: 1, agent: "codex", sessionId: "session-1", event: name, timestamp, ...extras };
@@ -73,6 +73,57 @@ describe("LiveStatusController", () => {
     expect(updates.at(-1)?.map(({ sessionId }) => sessionId)).toEqual(["session-2", "session-1"]);
     controller.setAgentEvent(event("PreToolUse", 11, { toolName: "Bash" }));
     expect(updates.at(-1)?.map(({ sessionId }) => sessionId)).toEqual(["session-1", "session-2"]);
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("keeps a dismissed task hidden while later hooks continue", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("UserPromptSubmit", 1, { turnId: "turn-1" }));
+    controller.dismiss(agentSessionKey({ agent: "codex", sessionId: "session-1" }));
+    expect(updates.at(-1)).toEqual([]);
+
+    controller.setAgentEvent(event("PreToolUse", 2, { turnId: "turn-1", toolName: "Bash" }));
+    controller.setAgentEvent(event("Stop", 3, { turnId: "turn-1" }));
+    expect(updates.at(-1)).toEqual([]);
+
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("shows a dismissed session again for the next user prompt", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    const currentPrompt = event("UserPromptSubmit", 1, { agent: "claude-code" });
+    controller.setAgentEvent(currentPrompt);
+    controller.dismiss(agentSessionKey({ agent: "claude-code", sessionId: "session-1" }));
+    controller.setAgentEvent(currentPrompt);
+    controller.setAgentEvent(event("PostToolUse", 2, { agent: "claude-code" }));
+    expect(updates.at(-1)).toEqual([]);
+
+    controller.setAgentEvent(event("UserPromptSubmit", 3, { agent: "claude-code", title: "下一个任务" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      agent: "claude-code",
+      phase: "thinking",
+      title: "下一个任务",
+    });
+
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("dismisses only the selected agent session", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("UserPromptSubmit", 1));
+    controller.setAgentEvent(event("UserPromptSubmit", 2, { sessionId: "session-2" }));
+    controller.dismiss(agentSessionKey({ agent: "codex", sessionId: "session-1" }));
+    expect(updates.at(-1)?.map(({ sessionId }) => sessionId)).toEqual(["session-2"]);
+
     controller.dispose();
     vi.useRealTimers();
   });
