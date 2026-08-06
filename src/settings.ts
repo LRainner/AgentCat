@@ -11,7 +11,13 @@ import {
   UPDATE_STATE_EVENT,
   type UpdateIndicatorState,
 } from "./update-indicator";
-import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgressPercent } from "./update-progress";
+import {
+  advanceUpdateProgress,
+  emptyUpdateProgress,
+  formatBytes,
+  updateProgressPercent,
+  type UpdateDownloadProgress,
+} from "./update-progress";
 import { AGENT_EVENT_CHANNEL, agentDisplayName, type RawAgentEvent } from "./agents";
 import {
   localeTag,
@@ -29,6 +35,16 @@ type PetDirectoryInfo = { defaultPath: string; examplePath: string };
 type SettingsPage = "general" | "agents" | "about";
 type IntegrationId = "codex" | "claude-code";
 type IntegrationConfigKey = "codex" | "claudeCode";
+type UpdatePresentation =
+  | { phase: "idle" }
+  | { phase: "available"; version: string }
+  | { phase: "checking" }
+  | { phase: "current" }
+  | { phase: "downloading"; version: string; progress: UpdateDownloadProgress }
+  | { phase: "ready"; version: string }
+  | { phase: "check-error"; error: string }
+  | { phase: "installing"; version: string }
+  | { phase: "install-error"; error: string; installed: boolean };
 
 const integrationIds = ["codex", "claude-code"] as const satisfies readonly IntegrationId[];
 const agentSettingsStorageKey = "agent-cat-settings-agent";
@@ -105,6 +121,7 @@ let updateInstalling = false;
 let activeSettingsPage: SettingsPage = "general";
 let activeAgentSettings: IntegrationId = readStoredAgentSettings();
 let updateState: UpdateIndicatorState | null = null;
+let updatePresentation: UpdatePresentation = { phase: "idle" };
 let petDirectoryInfo: PetDirectoryInfo;
 const previewImageCache = new Map<string, Promise<string>>();
 const configEventSource = `settings-${crypto.randomUUID()}`;
@@ -199,6 +216,8 @@ async function initialize(): Promise<void> {
 function applyLanguage(preference: LanguagePreference): void {
   setLanguage(preference);
   translateDocument();
+  if (currentVersion) document.querySelector<HTMLElement>("#current-version")!.textContent = `v${currentVersion}`;
+  renderUpdatePresentation();
   applyPetDirectoryInfo();
   void invoke("sync_native_i18n", { value: nativeMessages() });
 }
@@ -258,16 +277,120 @@ function refreshUpdateIndicator(): void {
   document.querySelector<HTMLElement>("#about-update-dot")!.hidden = !hasAvailableUpdate(updateState);
 }
 
+function renderUpdatePresentation(): void {
+  const card = document.querySelector<HTMLElement>("#update-status-card")!;
+  const icon = card.querySelector<HTMLElement>(".update-status-glyph")!;
+  const title = document.querySelector<HTMLElement>("#update-status-title")!;
+  const detail = document.querySelector<HTMLElement>("#update-status-detail")!;
+  const progressElement = document.querySelector<HTMLElement>("#update-progress")!;
+  const progressBar = document.querySelector<HTMLElement>("#update-progress-bar")!;
+  const checkButton = document.querySelector<HTMLButtonElement>("#check-update")!;
+  const installButton = document.querySelector<HTMLButtonElement>("#install-update")!;
+
+  card.dataset.state = updatePresentation.phase === "available"
+    ? "ready"
+    : updatePresentation.phase === "check-error" || updatePresentation.phase === "install-error"
+      ? "error"
+      : updatePresentation.phase;
+  checkButton.hidden = false;
+  checkButton.disabled = false;
+  installButton.hidden = true;
+  installButton.disabled = false;
+  progressElement.hidden = true;
+
+  switch (updatePresentation.phase) {
+    case "idle":
+      icon.textContent = "\u21bb";
+      title.textContent = t("Updates have not been checked");
+      detail.textContent = t("New versions are downloaded in the background and wait for installation only after signature verification succeeds.");
+      checkButton.textContent = t("Check for Updates");
+      progressBar.style.width = "0%";
+      break;
+    case "available":
+      icon.textContent = "\u2193";
+      title.textContent = t("New version v{version} found", { version: updatePresentation.version });
+      detail.textContent = t("The update package will be verified after download and then wait for installation.");
+      checkButton.textContent = t("Download Update");
+      break;
+    case "checking":
+      icon.textContent = "\u21bb";
+      title.textContent = t("Checking for updates");
+      detail.textContent = t("Securely retrieving update information…");
+      checkButton.disabled = true;
+      checkButton.textContent = t("Checking…");
+      progressBar.style.width = "0%";
+      break;
+    case "current":
+      icon.textContent = "\u2713";
+      title.textContent = t("You are up to date");
+      detail.textContent = t("The current version is v{version}. No updates are available.", { version: currentVersion });
+      checkButton.textContent = t("Check Again");
+      break;
+    case "downloading": {
+      const percent = updateProgressPercent(updatePresentation.progress);
+      icon.textContent = "\u2193";
+      title.textContent = t("Downloading v{version}", { version: updatePresentation.version });
+      detail.textContent = updatePresentation.progress.downloaded === 0
+        ? t("Preparing download…")
+        : percent === null
+          ? t("Downloaded {downloaded}", { downloaded: formatBytes(updatePresentation.progress.downloaded) })
+          : t("Downloaded {percent}% · {downloaded} / {total}", {
+            percent,
+            downloaded: formatBytes(updatePresentation.progress.downloaded),
+            total: formatBytes(updatePresentation.progress.total!),
+          });
+      progressBar.style.width = `${percent ?? 0}%`;
+      progressElement.hidden = false;
+      checkButton.hidden = true;
+      break;
+    }
+    case "ready":
+      icon.textContent = "\u2713";
+      title.textContent = t("v{version} is ready", { version: updatePresentation.version });
+      detail.textContent = t("The update package was downloaded and passed signature verification. It is safe to install.");
+      progressBar.style.width = "100%";
+      progressElement.hidden = false;
+      checkButton.hidden = true;
+      installButton.hidden = false;
+      break;
+    case "check-error":
+      icon.textContent = "!";
+      title.textContent = t("Unable to check for updates");
+      detail.textContent = t("{error}. Check your network and try again.", { error: updatePresentation.error });
+      checkButton.textContent = t("Check Again");
+      break;
+    case "installing":
+      icon.textContent = "\u21bb";
+      title.textContent = t("Installing v{version}", { version: updatePresentation.version });
+      detail.textContent = t("Agent Cat will restart automatically after installation.");
+      progressBar.style.width = "100%";
+      progressElement.hidden = false;
+      checkButton.hidden = true;
+      installButton.hidden = false;
+      installButton.disabled = true;
+      installButton.textContent = t("Installing…");
+      break;
+    case "install-error":
+      icon.textContent = "!";
+      title.textContent = updatePresentation.installed ? t("Update installed") : t("Update installation failed");
+      detail.textContent = updatePresentation.installed
+        ? t("Automatic restart failed. Reopen Agent Cat manually.")
+        : t("{error}. The download is still available, so you can retry installation.", { error: updatePresentation.error });
+      progressBar.style.width = "100%";
+      progressElement.hidden = false;
+      checkButton.hidden = true;
+      installButton.hidden = false;
+      installButton.disabled = updatePresentation.installed;
+      installButton.textContent = updatePresentation.installed ? t("Restart Manually") : t("Retry Installation");
+      break;
+  }
+}
+
 function renderKnownUpdate(): void {
   if (!updateState?.availableVersion) return;
   if (!pendingUpdate && !updateChecking) {
-    const card = document.querySelector<HTMLElement>("#update-status-card")!;
-    card.dataset.state = "ready";
-    card.querySelector<HTMLElement>(".update-status-glyph")!.textContent = "\u2193";
-    document.querySelector<HTMLElement>("#update-status-title")!.textContent = t("New version v{version} found", { version: updateState.availableVersion });
-    document.querySelector<HTMLElement>("#update-status-detail")!.textContent = t("The update package will be verified after download and then wait for installation.");
-    const button = document.querySelector<HTMLButtonElement>("#check-update")!;
-    button.textContent = t("Download Update");
+    updatePresentation = { phase: "available", version: updateState.availableVersion };
+    renderUpdatePresentation();
   }
 }
 
@@ -278,76 +401,40 @@ async function publishUpdateState(availableVersion: string | null): Promise<void
 }
 
 async function checkForUpdates(): Promise<void> {
-  const button = document.querySelector<HTMLButtonElement>("#check-update")!;
-  const installButton = document.querySelector<HTMLButtonElement>("#install-update")!;
-  const card = document.querySelector<HTMLElement>("#update-status-card")!;
-  const icon = card.querySelector<HTMLElement>(".update-status-glyph")!;
-  const title = document.querySelector<HTMLElement>("#update-status-title")!;
-  const detail = document.querySelector<HTMLElement>("#update-status-detail")!;
-  const progressElement = document.querySelector<HTMLElement>("#update-progress")!;
-  const progressBar = document.querySelector<HTMLElement>("#update-progress-bar")!;
   await closePendingUpdate();
   updateChecking = true;
-  button.disabled = true;
-  button.textContent = t("Checking…");
-  button.hidden = false;
-  installButton.hidden = true;
-  progressElement.hidden = true;
-  progressBar.style.width = "0%";
-  card.dataset.state = "checking";
-  icon.textContent = "\u21bb";
-  title.textContent = t("Checking for updates");
-  detail.textContent = t("Securely retrieving update information…");
+  updatePresentation = { phase: "checking" };
+  renderUpdatePresentation();
   let update: Update | null = null;
   try {
     update = await check();
     if (!update) {
       await publishUpdateState(null);
-      card.dataset.state = "current";
-      icon.textContent = "\u2713";
-      title.textContent = t("You are up to date");
-      detail.textContent = t("The current version is v{version}. No updates are available.", { version: currentVersion });
+      updatePresentation = { phase: "current" };
+      renderUpdatePresentation();
       return;
     }
 
     await publishUpdateState(update.version);
 
-    card.dataset.state = "downloading";
-    icon.textContent = "\u2193";
-    title.textContent = t("Downloading v{version}", { version: update.version });
-    detail.textContent = t("Preparing download…");
-    button.hidden = true;
-    progressElement.hidden = false;
     let progress = { ...emptyUpdateProgress };
+    updatePresentation = { phase: "downloading", version: update.version, progress };
+    renderUpdatePresentation();
     await update.download((event) => {
       progress = advanceUpdateProgress(progress, event);
-      const percent = updateProgressPercent(progress);
-      progressBar.style.width = `${percent ?? 0}%`;
-      detail.textContent = percent === null
-        ? t("Downloaded {downloaded}", { downloaded: formatBytes(progress.downloaded) })
-        : t("Downloaded {percent}% · {downloaded} / {total}", { percent, downloaded: formatBytes(progress.downloaded), total: formatBytes(progress.total!) });
+      updatePresentation = { phase: "downloading", version: update!.version, progress };
+      renderUpdatePresentation();
     });
 
     pendingUpdate = update;
-    card.dataset.state = "ready";
-    icon.textContent = "\u2713";
-    title.textContent = t("v{version} is ready", { version: update.version });
-    detail.textContent = t("The update package was downloaded and passed signature verification. It is safe to install.");
-    progressBar.style.width = "100%";
-    button.hidden = true;
-    installButton.hidden = false;
+    updatePresentation = { phase: "ready", version: update.version };
+    renderUpdatePresentation();
   } catch (error) {
     if (update && update !== pendingUpdate) await update.close().catch(() => undefined);
-    card.dataset.state = "error";
-    icon.textContent = "!";
-    title.textContent = t("Unable to check for updates");
-    detail.textContent = t("{error}. Check your network and try again.", { error: String(error) });
-    progressElement.hidden = true;
-    button.hidden = false;
+    updatePresentation = { phase: "check-error", error: String(error) };
+    renderUpdatePresentation();
   } finally {
     updateChecking = false;
-    button.disabled = false;
-    button.textContent = t("Check Again");
   }
 }
 
@@ -360,18 +447,9 @@ async function closePendingUpdate(): Promise<void> {
 async function installPendingUpdate(): Promise<void> {
   const update = pendingUpdate;
   if (!update) return;
-  const button = document.querySelector<HTMLButtonElement>("#install-update")!;
-  const card = document.querySelector<HTMLElement>("#update-status-card")!;
-  const icon = card.querySelector<HTMLElement>(".update-status-glyph")!;
-  const title = document.querySelector<HTMLElement>("#update-status-title")!;
-  const detail = document.querySelector<HTMLElement>("#update-status-detail")!;
   updateInstalling = true;
-  button.disabled = true;
-  button.textContent = t("Installing…");
-  card.dataset.state = "installing";
-  icon.textContent = "\u21bb";
-  title.textContent = t("Installing v{version}", { version: update.version });
-  detail.textContent = t("Agent Cat will restart automatically after installation.");
+  updatePresentation = { phase: "installing", version: update.version };
+  renderUpdatePresentation();
   let installed = false;
   try {
     await update.install();
@@ -380,14 +458,8 @@ async function installPendingUpdate(): Promise<void> {
     await publishUpdateState(null).catch(() => undefined);
     await relaunch();
   } catch (error) {
-    card.dataset.state = "error";
-    icon.textContent = "!";
-    title.textContent = installed ? t("Update installed") : t("Update installation failed");
-    detail.textContent = installed
-      ? t("Automatic restart failed. Reopen Agent Cat manually.")
-      : t("{error}. The download is still available, so you can retry installation.", { error: String(error) });
-    button.disabled = installed;
-    button.textContent = installed ? t("Restart Manually") : t("Retry Installation");
+    updatePresentation = { phase: "install-error", error: String(error), installed };
+    renderUpdatePresentation();
   } finally {
     updateInstalling = false;
   }

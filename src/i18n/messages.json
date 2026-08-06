@@ -92,7 +92,7 @@
   "Running": { "en": "Running", "cn": "运行中" },
   "Not running": { "en": "Not running", "cn": "未运行" },
   "Status event": { "en": "Status event", "cn": "状态事件" },
-  "No events received since launch": { "en": "No events received since launch", "cn": "本次启动尚未收到" },
+  "No events received since launch": { "en": "No events received since launch", "cn": "本次启动后尚未收到事件" },
   "No events received": { "en": "No events received", "cn": "尚未收到" },
   "One more step to connect {agent}": { "en": "One more step to connect {agent}", "cn": "还差一步即可连接 {agent}" },
   "Install the required Hooks and complete an end-to-end test through the local status receiver.": { "en": "Install the required Hooks and complete an end-to-end test through the local status receiver.", "cn": "一键安装所需 Hook，并通过本地状态接收器完成端到端测试。" },

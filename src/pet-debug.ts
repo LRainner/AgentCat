@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { ANIMATIONS, LOOK_ANGLES, type AnimationName } from "./animation-table";
 import { PetRenderer } from "./pet-renderer";
 import type { AppConfig, CatalogResult, PetDescriptor } from "./types";
@@ -14,6 +15,11 @@ let pets: PetDescriptor[] = [];
 let active: PetDescriptor;
 type SpriteInspection = { unusedCells: number; nonTransparentPixels: number; transparent: boolean };
 
+function applyLanguage(config: AppConfig): void {
+  setLanguage(config.language);
+  translateDocument();
+}
+
 renderer.onFrame = (frame) => {
   const frameInfo = t("Mode: {mode}\nRow: {row}\nColumn: {column}\nFrame: {frame}", frame);
   info.textContent = frame.angle === undefined ? frameInfo : `${frameInfo}\n${t("Angle: {angle}°", { angle: String(frame.angle).padStart(3, "0") })}`;
@@ -21,8 +27,7 @@ renderer.onFrame = (frame) => {
 
 async function initialize(): Promise<void> {
   const [catalog, config] = await Promise.all([invoke<CatalogResult>("scan_pets"), invoke<AppConfig>("get_config")]);
-  setLanguage(config.language);
-  translateDocument();
+  applyLanguage(config);
   void invoke("sync_native_i18n", { value: nativeMessages() });
   pets = catalog.pets;
   select.replaceChildren(...pets.map((pet, index) => {
@@ -73,4 +78,5 @@ function buildButtons(): void {
 select.addEventListener("change", () => void loadPet(Number(select.value)));
 document.querySelector("#debug-scale")!.addEventListener("input", (event) => renderer.resize(Number((event.target as HTMLInputElement).value)));
 document.querySelector("#debug-background")!.addEventListener("input", (event) => stage.style.background = (event.target as HTMLInputElement).value);
+void listen("agent-cat-config-changed", async () => applyLanguage(await invoke<AppConfig>("get_config")));
 void initialize().catch((error) => validation.textContent = String(error));
