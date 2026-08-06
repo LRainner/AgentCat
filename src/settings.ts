@@ -13,6 +13,15 @@ import {
 } from "./update-indicator";
 import { advanceUpdateProgress, emptyUpdateProgress, formatBytes, updateProgressPercent } from "./update-progress";
 import { AGENT_EVENT_CHANNEL, agentDisplayName, type RawAgentEvent } from "./agents";
+import {
+  localeTag,
+  nativeMessages,
+  setLanguage,
+  t,
+  translateDocument,
+  type LanguagePreference,
+  type MessageKey,
+} from "./i18n";
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; globallyDisabled: boolean; installedEvents: number; expectedEvents: number; message: string };
 type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; verifiedAt: number | null; lastRealEventAt: number | null; lastRealEvent: string | null };
@@ -53,29 +62,29 @@ const integrationDefinitions: Record<IntegrationId, {
   },
 };
 
-const settingsPageCopy: Record<SettingsPage, { eyebrow: string; title: string; description: string }> = {
-  general: { eyebrow: "PREFERENCES", title: "通用", description: "选择宠物并调整它在桌面上的表现。" },
-  agents: { eyebrow: "INTEGRATIONS", title: "智能体", description: "选择智能体并管理连接、实时状态和任务摘要。" },
-  about: { eyebrow: "ABOUT", title: "关于", description: "查看 Agent Cat 版本和软件更新。" },
+const settingsPageCopy: Record<SettingsPage, { eyebrow: string; title: MessageKey; description: MessageKey }> = {
+  general: { eyebrow: "PREFERENCES", title: "General", description: "Choose a pet and adjust how it behaves on your desktop." },
+  agents: { eyebrow: "INTEGRATIONS", title: "Agents", description: "Choose an agent and manage its connection, live status, and task summaries." },
+  about: { eyebrow: "ABOUT", title: "About", description: "View the Agent Cat version and software updates." },
 };
 
-const sourceLabels: Record<PetSource, string> = { "codex-builtin": "Codex 内置", "codex-custom": "Codex 自定义宠物", "user-folder": "其他目录" };
-const eventLabels: Record<string, string> = {
-  SessionStart: "会话开始",
-  UserPromptSubmit: "收到任务",
-  PreToolUse: "开始使用工具",
-  PostToolUse: "工具执行完成",
-  PostToolUseFailure: "工具执行失败",
-  SubagentStart: "协作开始",
-  SubagentStop: "协作完成",
-  PreCompact: "整理上下文",
-  PostCompact: "继续任务",
-  PermissionRequest: "等待确认",
-  Stop: "任务完成",
-  StopFailure: "任务异常结束",
-  SessionEnd: "会话退出",
-  TurnInterrupted: "任务中断",
-  HookParseError: "解析失败",
+const sourceLabels: Record<PetSource, MessageKey> = { "codex-builtin": "Codex built-in", "codex-custom": "Codex custom pets", "user-folder": "Other directories" };
+const eventLabels: Record<string, MessageKey> = {
+  SessionStart: "Session started",
+  UserPromptSubmit: "Task received",
+  PreToolUse: "Tool use started",
+  PostToolUse: "Tool completed",
+  PostToolUseFailure: "Tool failed",
+  SubagentStart: "Collaboration started",
+  SubagentStop: "Collaboration completed",
+  PreCompact: "Compacting context",
+  PostCompact: "Task resumed",
+  PermissionRequest: "Waiting for confirmation",
+  Stop: "Task completed",
+  StopFailure: "Task ended with an error",
+  SessionEnd: "Session ended",
+  TurnInterrupted: "Task interrupted",
+  HookParseError: "Parse failed",
 };
 const message = document.querySelector<HTMLElement>("#settings-message")!;
 const catalogElement = document.querySelector<HTMLElement>("#pet-catalog")!;
@@ -141,7 +150,7 @@ function renderAgentSettingsNavigation(): void {
     name.textContent = displayName;
     const status = document.createElement("small");
     status.dataset.agentStatus = agent;
-    status.textContent = "检查中";
+    status.textContent = t("Checking");
     copy.append(name, status);
     button.append(icon, copy);
     button.addEventListener("click", () => showAgentSettings(agent));
@@ -178,8 +187,7 @@ async function initialize(): Promise<void> {
     getVersion(),
     invoke<PetDirectoryInfo>("pet_directory_info"),
   ]);
-  input("extra-directory").placeholder = petDirectoryInfo.examplePath;
-  document.querySelector<HTMLButtonElement>("#open-codex-pets")!.title = petDirectoryInfo.defaultPath;
+  applyLanguage(config.language);
   document.querySelector<HTMLElement>("#current-version")!.textContent = `v${currentVersion}`;
   updateState = readUpdateState(localStorage, currentVersion);
   refreshUpdateIndicator();
@@ -188,12 +196,25 @@ async function initialize(): Promise<void> {
   await Promise.all([refreshCatalog(), refreshHookStatus("codex"), refreshHookStatus("claude-code"), refreshAutostart()]);
 }
 
+function applyLanguage(preference: LanguagePreference): void {
+  setLanguage(preference);
+  translateDocument();
+  applyPetDirectoryInfo();
+  void invoke("sync_native_i18n", { value: nativeMessages() });
+}
+
+function applyPetDirectoryInfo(): void {
+  if (!petDirectoryInfo) return;
+  input("extra-directory").placeholder = petDirectoryInfo.examplePath;
+  document.querySelector<HTMLButtonElement>("#open-codex-pets")!.title = petDirectoryInfo.defaultPath;
+}
+
 function showSettingsPage(page: SettingsPage, updateHash = true): void {
   activeSettingsPage = page;
   const copy = settingsPageCopy[page];
   document.querySelector<HTMLElement>("#settings-page-eyebrow")!.textContent = copy.eyebrow;
-  document.querySelector<HTMLElement>("#settings-page-title")!.textContent = copy.title;
-  document.querySelector<HTMLElement>("#settings-page-description")!.textContent = copy.description;
+  document.querySelector<HTMLElement>("#settings-page-title")!.textContent = t(copy.title);
+  document.querySelector<HTMLElement>("#settings-page-description")!.textContent = t(copy.description);
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-settings-page]")) {
     const active = button.dataset.settingsPage === page;
     button.classList.toggle("active", active);
@@ -243,10 +264,10 @@ function renderKnownUpdate(): void {
     const card = document.querySelector<HTMLElement>("#update-status-card")!;
     card.dataset.state = "ready";
     card.querySelector<HTMLElement>(".update-status-glyph")!.textContent = "\u2193";
-    document.querySelector<HTMLElement>("#update-status-title")!.textContent = `发现新版本 v${updateState.availableVersion}`;
-    document.querySelector<HTMLElement>("#update-status-detail")!.textContent = "点击下载后将验证更新包，并等待安装。";
+    document.querySelector<HTMLElement>("#update-status-title")!.textContent = t("New version v{version} found", { version: updateState.availableVersion });
+    document.querySelector<HTMLElement>("#update-status-detail")!.textContent = t("The update package will be verified after download and then wait for installation.");
     const button = document.querySelector<HTMLButtonElement>("#check-update")!;
-    button.textContent = "下载更新";
+    button.textContent = t("Download Update");
   }
 }
 
@@ -268,15 +289,15 @@ async function checkForUpdates(): Promise<void> {
   await closePendingUpdate();
   updateChecking = true;
   button.disabled = true;
-  button.textContent = "正在检查…";
+  button.textContent = t("Checking…");
   button.hidden = false;
   installButton.hidden = true;
   progressElement.hidden = true;
   progressBar.style.width = "0%";
   card.dataset.state = "checking";
   icon.textContent = "\u21bb";
-  title.textContent = "正在检查更新";
-  detail.textContent = "正在安全地读取更新信息…";
+  title.textContent = t("Checking for updates");
+  detail.textContent = t("Securely retrieving update information…");
   let update: Update | null = null;
   try {
     update = await check();
@@ -284,8 +305,8 @@ async function checkForUpdates(): Promise<void> {
       await publishUpdateState(null);
       card.dataset.state = "current";
       icon.textContent = "\u2713";
-      title.textContent = "已是最新版本";
-      detail.textContent = `当前版本 v${currentVersion}，暂无可用更新。`;
+      title.textContent = t("You are up to date");
+      detail.textContent = t("The current version is v{version}. No updates are available.", { version: currentVersion });
       return;
     }
 
@@ -293,8 +314,8 @@ async function checkForUpdates(): Promise<void> {
 
     card.dataset.state = "downloading";
     icon.textContent = "\u2193";
-    title.textContent = `正在下载 v${update.version}`;
-    detail.textContent = "正在准备下载…";
+    title.textContent = t("Downloading v{version}", { version: update.version });
+    detail.textContent = t("Preparing download…");
     button.hidden = true;
     progressElement.hidden = false;
     let progress = { ...emptyUpdateProgress };
@@ -303,15 +324,15 @@ async function checkForUpdates(): Promise<void> {
       const percent = updateProgressPercent(progress);
       progressBar.style.width = `${percent ?? 0}%`;
       detail.textContent = percent === null
-        ? `已下载 ${formatBytes(progress.downloaded)}`
-        : `已下载 ${percent}% · ${formatBytes(progress.downloaded)} / ${formatBytes(progress.total!)}`;
+        ? t("Downloaded {downloaded}", { downloaded: formatBytes(progress.downloaded) })
+        : t("Downloaded {percent}% · {downloaded} / {total}", { percent, downloaded: formatBytes(progress.downloaded), total: formatBytes(progress.total!) });
     });
 
     pendingUpdate = update;
     card.dataset.state = "ready";
     icon.textContent = "\u2713";
-    title.textContent = `v${update.version} 已准备好`;
-    detail.textContent = "更新包已下载并通过签名验证，可以安全安装。";
+    title.textContent = t("v{version} is ready", { version: update.version });
+    detail.textContent = t("The update package was downloaded and passed signature verification. It is safe to install.");
     progressBar.style.width = "100%";
     button.hidden = true;
     installButton.hidden = false;
@@ -319,14 +340,14 @@ async function checkForUpdates(): Promise<void> {
     if (update && update !== pendingUpdate) await update.close().catch(() => undefined);
     card.dataset.state = "error";
     icon.textContent = "!";
-    title.textContent = "暂时无法检查更新";
-    detail.textContent = `${String(error)}。请检查网络后重试。`;
+    title.textContent = t("Unable to check for updates");
+    detail.textContent = t("{error}. Check your network and try again.", { error: String(error) });
     progressElement.hidden = true;
     button.hidden = false;
   } finally {
     updateChecking = false;
     button.disabled = false;
-    button.textContent = "再次检查";
+    button.textContent = t("Check Again");
   }
 }
 
@@ -346,11 +367,11 @@ async function installPendingUpdate(): Promise<void> {
   const detail = document.querySelector<HTMLElement>("#update-status-detail")!;
   updateInstalling = true;
   button.disabled = true;
-  button.textContent = "正在安装…";
+  button.textContent = t("Installing…");
   card.dataset.state = "installing";
   icon.textContent = "\u21bb";
-  title.textContent = `正在安装 v${update.version}`;
-  detail.textContent = "安装完成后 Agent Cat 会自动重启。";
+  title.textContent = t("Installing v{version}", { version: update.version });
+  detail.textContent = t("Agent Cat will restart automatically after installation.");
   let installed = false;
   try {
     await update.install();
@@ -361,18 +382,19 @@ async function installPendingUpdate(): Promise<void> {
   } catch (error) {
     card.dataset.state = "error";
     icon.textContent = "!";
-    title.textContent = installed ? "更新已安装" : "更新安装失败";
+    title.textContent = installed ? t("Update installed") : t("Update installation failed");
     detail.textContent = installed
-      ? "自动重启失败，请手动重新打开 Agent Cat。"
-      : `${String(error)}。下载内容仍然保留，可以重试安装。`;
+      ? t("Automatic restart failed. Reopen Agent Cat manually.")
+      : t("{error}. The download is still available, so you can retry installation.", { error: String(error) });
     button.disabled = installed;
-    button.textContent = installed ? "请手动重启" : "重试安装";
+    button.textContent = installed ? t("Restart Manually") : t("Retry Installation");
   } finally {
     updateInstalling = false;
   }
 }
 
 function bindConfig(): void {
+  input<HTMLSelectElement & HTMLInputElement>("language").value = config.language;
   const scale = input<HTMLInputElement>("scale");
   scale.value = String(config.window.scale);
   input<HTMLOutputElement & HTMLInputElement>("scale-value").value = `${Math.round(config.window.scale * 100)}%`;
@@ -413,7 +435,7 @@ function renderExtraDirectories(): void {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary compact";
-    remove.textContent = "移除";
+    remove.textContent = t("Remove");
     remove.addEventListener("click", async () => {
       config.petSources.extraDirectories = config.petSources.extraDirectories.filter((value) => value !== directory);
       await persist();
@@ -435,7 +457,7 @@ function persist(announce = true): Promise<void> {
     await invoke("save_config", { value: snapshot });
     await invoke("apply_config_preview", { value: snapshot });
     await emit("agent-cat-config-changed", { source: configEventSource });
-    if (announce) showMessage("已保存");
+    if (announce) showMessage(t("Saved"));
   });
   persistQueue = task;
   return task;
@@ -464,22 +486,22 @@ function previewConfig(): void {
 
 async function refreshCatalog(): Promise<void> {
   catalog = await invoke<CatalogResult>("scan_pets");
-  summary.textContent = `${catalog.pets.length} 只可用宠物 · ${catalog.diagnostics.length} 个无效资源${catalog.codexBundles.length ? ` · Codex ${catalog.codexBundles[0].version ?? "未知版本"}` : " · 未发现 Codex.app"}`;
+  summary.textContent = `${t("{pets} available pets · {invalid} invalid resources", { pets: catalog.pets.length, invalid: catalog.diagnostics.length })}${catalog.codexBundles.length ? ` · Codex ${catalog.codexBundles[0].version ?? t("Unknown version")}` : ` · ${t("Codex.app not found")}`}`;
   catalogElement.replaceChildren();
   for (const source of ["codex-builtin", "codex-custom", "user-folder"] as PetSource[]) {
     const pets = catalog.pets.filter((pet) => pet.source === source);
     if (!pets.length) continue;
     const group = document.createElement("div");
     group.className = "pet-group";
-    group.innerHTML = `<h3>${sourceLabels[source]}</h3><div class="pet-grid"></div>`;
+    group.innerHTML = `<h3>${t(sourceLabels[source])}</h3><div class="pet-grid"></div>`;
     const grid = group.querySelector<HTMLElement>(".pet-grid")!;
     grid.append(...await Promise.all(pets.map(petCard)));
     catalogElement.append(group);
   }
-  if (!catalog.pets.length) catalogElement.innerHTML = `<div class="empty-state">没有找到有效宠物。Agent Cat 会继续使用原创 CSS fallback cat。</div>`;
+  if (!catalog.pets.length) catalogElement.innerHTML = `<div class="empty-state">${t("No valid pets were found. Agent Cat will continue using the original CSS fallback cat.")}</div>`;
   if (catalog.diagnostics.length) {
     const details = document.createElement("details");
-    details.innerHTML = `<summary>查看无效宠物</summary><ul>${catalog.diagnostics.map((item) => `<li><code>${escapeHtml(item.path)}</code><br>${escapeHtml(item.message)}</li>`).join("")}</ul>`;
+    details.innerHTML = `<summary>${t("View invalid pets")}</summary><ul>${catalog.diagnostics.map((item) => `<li><code>${escapeHtml(item.path)}</code><br>${escapeHtml(item.message)}</li>`).join("")}</ul>`;
     catalogElement.append(details);
   }
 }
@@ -541,66 +563,66 @@ async function refreshHookStatus(agent: IntegrationId): Promise<void> {
     const installed = status.installedEvents === status.expectedEvents;
     linkToggle.disabled = !installed || status.globallyDisabled;
     linkControl.title = status.globallyDisabled
-      ? "Claude Code 已全局禁用所有 Hooks"
-      : installed ? `启用或暂停 ${displayName} 状态联动` : `请先连接 ${displayName}`;
+      ? t("Claude Code has disabled all Hooks globally")
+      : installed ? t("Enable or pause {agent} status integration", { agent: displayName }) : t("Connect {agent} first", { agent: displayName });
     hookElement.textContent = !installed
-      ? `${status.installedEvents}/${status.expectedEvents}，需要安装`
-      : status.globallyDisabled ? "Claude Code 已全局禁用所有 Hooks" : `已安装 ${status.installedEvents}/${status.expectedEvents}`;
+      ? t("{installed}/{expected}, installation required", { installed: status.installedEvents, expected: status.expectedEvents })
+      : status.globallyDisabled ? t("Claude Code has disabled all Hooks globally") : t("Installed {installed}/{expected}", { installed: status.installedEvents, expected: status.expectedEvents });
     hookElement.title = `${status.message} · ${status.path}`;
     hookElement.className = installed && !status.globallyDisabled ? "status-ok" : "status-error";
-    receiverElement.textContent = runtime.receiverRunning ? "运行中" : "未运行";
+    receiverElement.textContent = runtime.receiverRunning ? t("Running") : t("Not running");
     receiverElement.title = runtime.socketPath;
     receiverElement.className = runtime.receiverRunning ? "status-ok" : "status-error";
     eventElement.textContent = runtime.lastRealEventAt
-      ? `${eventLabels[runtime.lastRealEvent ?? ""] ?? runtime.lastRealEvent ?? "状态事件"} · ${relativeTime(runtime.lastRealEventAt)}`
+      ? `${eventLabels[runtime.lastRealEvent ?? ""] ? t(eventLabels[runtime.lastRealEvent ?? ""]) : runtime.lastRealEvent ?? t("Status event")} · ${relativeTime(runtime.lastRealEventAt)}`
       : runtime.verifiedAt
-        ? "本次启动尚未收到"
-        : "尚未收到";
+        ? t("No events received since launch")
+        : t("No events received");
 
     if (!installed) {
       card.dataset.state = "setup";
-      title.textContent = `还差一步即可连接 ${displayName}`;
-      detail.textContent = "一键安装所需 Hook，并通过本地状态接收器完成端到端测试。";
-      badge.textContent = "未连接";
+      title.textContent = t("One more step to connect {agent}", { agent: displayName });
+      detail.textContent = t("Install the required Hooks and complete an end-to-end test through the local status receiver.");
+      badge.textContent = t("Not connected");
     } else if (status.globallyDisabled) {
       card.dataset.state = "error";
-      title.textContent = "Claude Code 已全局禁用所有 Hooks";
-      detail.textContent = "请先在 Claude Code 设置中关闭 disableAllHooks，再回来重新测试连接。";
-      badge.textContent = "全局禁用";
+      title.textContent = t("Claude Code has disabled all Hooks globally");
+      detail.textContent = t("Disable disableAllHooks in Claude Code settings, then return here and test the connection again.");
+      badge.textContent = t("Globally disabled");
     } else if (!currentConfig.hooksEnabled) {
       card.dataset.state = "paused";
-      title.textContent = `${displayName} 状态联动已暂停`;
-      detail.textContent = "Hook 配置会保留；重新打开上方“状态联动”开关即可继续。";
-      badge.textContent = "已暂停";
+      title.textContent = t("{agent} status integration is paused", { agent: displayName });
+      detail.textContent = t("The Hook configuration is preserved. Turn the Status integration switch above back on to resume.");
+      badge.textContent = t("Paused");
     } else if (!runtime.receiverRunning) {
       card.dataset.state = "error";
-      title.textContent = "状态接收器未运行";
-      detail.textContent = "Hook 配置完整，但本地接收器不可用；请重启 Agent Cat 后重新测试。";
-      badge.textContent = "需重启";
+      title.textContent = t("Status receiver is not running");
+      detail.textContent = t("The Hook configuration is complete, but the local receiver is unavailable. Restart Agent Cat and test again.");
+      badge.textContent = t("Restart required");
     } else if (runtime.verifiedAt) {
       card.dataset.state = "connected";
-      title.textContent = `${displayName} 状态联动正常`;
+      title.textContent = t("{agent} status integration is working", { agent: displayName });
       detail.textContent = "";
       detail.hidden = true;
-      badge.textContent = "已连接";
+      badge.textContent = t("Connected");
     } else {
       card.dataset.state = "pending";
-      title.textContent = "Hook 已安装，等待验证";
-      detail.textContent = `请在 ${displayName} 中开始一个任务，以完成真实事件验证。`;
-      badge.textContent = "待验证";
+      title.textContent = t("Hook installed, waiting for verification");
+      detail.textContent = t("Start a task in {agent} to verify a real event.", { agent: displayName });
+      badge.textContent = t("Waiting for verification");
     }
   } catch (error) {
     if (request !== hookRefreshRequests[agent]) return;
     card.dataset.state = "error";
-    title.textContent = `无法检查 ${displayName} 连接`;
+    title.textContent = t("Unable to check the {agent} connection", { agent: displayName });
     detail.textContent = String(error);
-    badge.textContent = "检查失败";
-    hookElement.textContent = "检查失败";
+    badge.textContent = t("Check failed");
+    hookElement.textContent = t("Check failed");
     hookElement.className = "status-error";
-    receiverElement.textContent = "未知";
-    eventElement.textContent = "未知";
+    receiverElement.textContent = t("Unknown");
+    eventElement.textContent = t("Unknown");
     linkToggle.disabled = true;
-    linkControl.title = `暂时无法检查 ${displayName} 状态联动`;
+    linkControl.title = t("Temporarily unable to check {agent} status integration", { agent: displayName });
   } finally {
     if (request === hookRefreshRequests[agent]) syncAgentNavigationState(agent);
   }
@@ -608,11 +630,11 @@ async function refreshHookStatus(agent: IntegrationId): Promise<void> {
 
 function relativeTime(timestamp: number): string {
   const elapsed = Math.max(0, Date.now() - timestamp);
-  if (elapsed < 10_000) return "刚刚";
-  if (elapsed < 60_000) return `${Math.floor(elapsed / 1_000)} 秒前`;
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前`;
-  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(timestamp);
+  if (elapsed < 10_000) return t("Just now");
+  if (elapsed < 60_000) return t("{count} seconds ago", { count: Math.floor(elapsed / 1_000) });
+  if (elapsed < 3_600_000) return t("{count} minutes ago", { count: Math.floor(elapsed / 60_000) });
+  if (elapsed < 86_400_000) return t("{count} hours ago", { count: Math.floor(elapsed / 3_600_000) });
+  return new Intl.DateTimeFormat(localeTag(), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(timestamp);
 }
 
 async function refreshAutostart(): Promise<void> {
@@ -680,6 +702,15 @@ for (const [id, apply] of [
   await persist();
 });
 
+input("language").addEventListener("change", async (event) => {
+  config.language = (event.target as HTMLSelectElement).value as LanguagePreference;
+  applyLanguage(config.language);
+  showSettingsPage(activeSettingsPage, false);
+  renderExtraDirectories();
+  await Promise.all([refreshCatalog(), refreshHookStatus("codex"), refreshHookStatus("claude-code")]);
+  await persist();
+});
+
 for (const agent of ["codex", "claude-code"] as const) {
   const definition = integrationDefinitions[agent];
   input(definition.linkId).addEventListener("change", async (event) => {
@@ -704,7 +735,7 @@ input("launch-at-login").addEventListener("change", async (event) => {
   try {
     await invoke("set_autostart", { enabled });
     await refreshAutostart();
-    showMessage(enabled ? "已启用登录时启动" : "已关闭登录时启动");
+    showMessage(enabled ? t("Launch at login enabled") : t("Launch at login disabled"));
   } catch (error) {
     await refreshAutostart();
     showMessage(String(error), true);
@@ -728,10 +759,10 @@ document.querySelector("#open-codex-pets")!.addEventListener("click", async () =
   try {
     await invoke("reveal_pet_directory");
   } catch (error) {
-    showMessage(`无法打开宠物目录：${String(error)}`, true);
+    showMessage(t("Unable to open the pet directory: {error}", { error: String(error) }), true);
   }
 });
-document.querySelector("#reset-position")!.addEventListener("click", async () => { config = await invoke<AppConfig>("reset_main_position"); bindConfig(); showMessage("位置已恢复"); });
+document.querySelector("#reset-position")!.addEventListener("click", async () => { config = await invoke<AppConfig>("reset_main_position"); bindConfig(); showMessage(t("Position restored")); });
 function bindIntegrationActions(agent: IntegrationId): void {
   const definition = integrationDefinitions[agent];
   const displayName = agentDisplayName(agent);
@@ -739,12 +770,12 @@ function bindIntegrationActions(agent: IntegrationId): void {
   document.querySelector(`#${definition.connectId}`)!.addEventListener("click", async (event) => {
     const button = event.currentTarget as HTMLButtonElement;
     button.disabled = true;
-    button.textContent = "正在连接…";
+    button.textContent = t("Connecting…");
     try {
       const status = await invoke<HookStatus>("install_hooks", { agent });
       if (status.globallyDisabled) {
         await refreshHookStatus(agent);
-        showMessage("Claude Code 已全局禁用所有 Hooks，请先关闭 disableAllHooks", true);
+        showMessage(t("Claude Code has disabled all Hooks globally. Disable disableAllHooks first."), true);
         return;
       }
       const currentConfig = integrationConfig(agent);
@@ -754,13 +785,13 @@ function bindIntegrationActions(agent: IntegrationId): void {
       await persist();
       await invoke<HookRuntimeStatus>("probe_hook", { agent });
       await refreshHookStatus(agent);
-      showMessage(`Hook 已安装，本地测试通过；等待真实 ${displayName} 事件验证`);
+      showMessage(t("Hook installed and local test passed. Waiting for a real {agent} event to verify.", { agent: displayName }));
     } catch (error) {
       await refreshHookStatus(agent);
       showMessage(String(error), true);
     } finally {
       button.disabled = false;
-      button.textContent = "一键连接并测试";
+      button.textContent = t("Connect and Test");
     }
   });
   document.querySelector(`#${definition.installId}`)!.addEventListener("click", async () => {
@@ -776,8 +807,8 @@ function bindIntegrationActions(agent: IntegrationId): void {
       await refreshHookStatus(agent);
       showMessage(
         installedStatus.globallyDisabled
-          ? "Claude Code Hook 已写入，但 disableAllHooks 当前会阻止它运行"
-          : `${displayName} Hook 已安装；建议再运行一次连接测试`,
+          ? t("The Claude Code Hook was written, but disableAllHooks currently prevents it from running.")
+          : t("The {agent} Hook is installed. Run the connection test again.", { agent: displayName }),
         installedStatus.globallyDisabled,
       );
     } catch (error) { showMessage(String(error), true); }
@@ -789,16 +820,16 @@ function bindIntegrationActions(agent: IntegrationId): void {
       bindConfig();
       await persist();
       await refreshHookStatus(agent);
-      showMessage(`${displayName} 的 Agent Cat Hook 已卸载`);
+      showMessage(t("The Agent Cat Hook for {agent} was uninstalled", { agent: displayName }));
     } catch (error) { showMessage(String(error), true); }
   });
   document.querySelector(`#${definition.testId}`)!.addEventListener("click", async () => {
     try {
       const status = await invoke<HookStatus>("hook_status", { agent });
-      if (status.globallyDisabled) throw new Error("Claude Code 已全局禁用所有 Hooks，请先关闭 disableAllHooks");
+      if (status.globallyDisabled) throw new Error(t("Claude Code has disabled all Hooks globally. Disable disableAllHooks first."));
       await invoke<HookRuntimeStatus>("probe_hook", { agent });
       await refreshHookStatus(agent);
-      showMessage(`${displayName} 本地 Hook 测试通过；验证状态保持不变`);
+      showMessage(t("The local {agent} Hook test passed. Verification status is unchanged.", { agent: displayName }));
     } catch (error) {
       await refreshHookStatus(agent);
       showMessage(String(error), true);
@@ -819,6 +850,7 @@ window.addEventListener("hashchange", showSettingsRoute);
 void listen<{ source?: string }>("agent-cat-config-changed", async ({ payload }) => {
   if (payload?.source === configEventSource) return;
   config = await invoke<AppConfig>("get_config");
+  applyLanguage(config.language);
   bindConfig();
 });
 void listen("agent-cat-autostart-changed", () => void refreshAutostart());

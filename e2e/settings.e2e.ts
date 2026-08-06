@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const config = {
   version: 1,
+  language: "cn",
   pet: null,
   petSources: { scanCodexBuiltin: true, scanCodexCustom: true, extraDirectories: [] },
   window: {
@@ -192,6 +193,26 @@ test("shows native pet directory paths and opens the default directory", async (
   await expect.poll(() => page.evaluate(() => (
     window as unknown as { __TAURI_TEST_COMMANDS__: string[] }
   ).__TAURI_TEST_COMMANDS__)).toContain("reveal_pet_directory");
+});
+
+test("switches languages without translating language names or native paths", async ({ page }) => {
+  await page.goto("/settings.html");
+  const language = page.locator("#language");
+  const directory = page.locator("#extra-directory");
+
+  await language.selectOption("en");
+  await expect(page.getByRole("heading", { name: "General" })).toBeVisible();
+  await expect(language.locator('option[value="system"]')).toHaveText("Follow system");
+  await expect(language.locator('option[value="cn"]')).toHaveText("简体中文");
+  await expect(language.locator('option[value="en"]')).toHaveText("English");
+  await expect(directory).toHaveAttribute("placeholder", "C:\\Users\\Tester\\Downloads\\codex-pets");
+
+  await language.selectOption("cn");
+  await expect(page.getByRole("heading", { name: "通用" })).toBeVisible();
+  await expect(language.locator('option[value="system"]')).toHaveText("跟随系统");
+  await expect(language.locator('option[value="cn"]')).toHaveText("简体中文");
+  await expect(language.locator('option[value="en"]')).toHaveText("English");
+  await expect(directory).toHaveAttribute("placeholder", "C:\\Users\\Tester\\Downloads\\codex-pets");
 });
 
 test("shows an error when the default pet directory cannot be opened", async ({ page }) => {

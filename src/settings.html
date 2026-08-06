@@ -3,111 +3,117 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Cat 设置</title>
+    <title data-i18n="Agent Cat Settings">Agent Cat 设置</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="app-page settings-page">
     <main class="settings-shell">
       <aside class="settings-sidebar">
-        <div class="settings-brand"><img class="settings-brand-mark" alt="" /><div><p class="eyebrow">AGENT CAT</p><strong>设置</strong></div></div>
-        <nav class="settings-nav" aria-label="设置分类" role="tablist">
-          <button class="settings-nav-item active" type="button" data-settings-page="general" role="tab" aria-selected="true"><span class="settings-nav-icon" data-icon="settings" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg></span><span><strong>通用</strong><small>宠物、显示与行为</small></span></button>
-          <button class="settings-nav-item" type="button" data-settings-page="agents" role="tab" aria-selected="false"><span class="settings-nav-icon" data-icon="bot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg></span><span><strong>智能体</strong><small>连接与实时状态</small></span></button>
-          <button class="settings-nav-item" type="button" data-settings-page="about" role="tab" aria-selected="false"><span class="settings-nav-icon" data-icon="info" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span><span><strong>关于</strong><small>版本与软件更新</small></span><span id="about-update-dot" class="settings-update-dot" title="有可用更新" aria-label="有可用更新" hidden></span></button>
+        <div class="settings-brand"><img class="settings-brand-mark" alt="" /><div><p class="eyebrow">AGENT CAT</p><strong data-i18n="Settings">设置</strong></div></div>
+        <nav class="settings-nav" aria-label="设置分类" data-i18n-aria-label="Settings categories" role="tablist">
+          <button class="settings-nav-item active" type="button" data-settings-page="general" role="tab" aria-selected="true"><span class="settings-nav-icon" data-icon="settings" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg></span><span><strong data-i18n="General">通用</strong><small data-i18n="Pets, display and behavior">宠物、显示与行为</small></span></button>
+          <button class="settings-nav-item" type="button" data-settings-page="agents" role="tab" aria-selected="false"><span class="settings-nav-icon" data-icon="bot" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M9 13v2M15 13v2"/></svg></span><span><strong data-i18n="Agents">智能体</strong><small data-i18n="Connections and live status">连接与实时状态</small></span></button>
+          <button class="settings-nav-item" type="button" data-settings-page="about" role="tab" aria-selected="false"><span class="settings-nav-icon" data-icon="info" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span><span><strong data-i18n="About">关于</strong><small data-i18n="Version and software updates">版本与软件更新</small></span><span id="about-update-dot" class="settings-update-dot" title="有可用更新" aria-label="有可用更新" data-i18n-title="Update available" data-i18n-aria-label="Update available" hidden></span></button>
         </nav>
       </aside>
       <div class="settings-content">
       <header class="settings-header"><div><p class="eyebrow" id="settings-page-eyebrow">PREFERENCES</p><h1 id="settings-page-title">通用</h1><p id="settings-page-description" class="muted">选择宠物并调整它在桌面上的表现。</p></div></header>
       <div class="settings-panel" data-settings-panel="general" role="tabpanel">
-      <section><div class="section-heading"><div><h2>宠物</h2><p id="catalog-summary" class="muted">正在扫描…</p></div><div class="section-heading-actions"><button id="open-debug" class="secondary">动画测试器</button><button id="refresh-pets" class="secondary">刷新宠物</button></div></div><div id="pet-catalog"></div>
-        <div class="inline-form"><input id="extra-directory" placeholder="宠物目录路径" /><button id="add-directory">添加目录</button><button id="open-codex-pets" class="secondary">打开宠物目录</button></div>
+      <section><div class="section-heading"><div><h2 data-i18n="Pet">宠物</h2><p id="catalog-summary" class="muted" data-i18n="Scanning…">正在扫描…</p></div><div class="section-heading-actions"><button id="open-debug" class="secondary" data-i18n="Animation Tester">动画测试器</button><button id="refresh-pets" class="secondary" data-i18n="Refresh Pets">刷新宠物</button></div></div><div id="pet-catalog"></div>
+        <div class="inline-form"><input id="extra-directory" placeholder="宠物目录路径" /><button id="add-directory" data-i18n="Add Directory">添加目录</button><button id="open-codex-pets" class="secondary" data-i18n="Open Pet Directory">打开宠物目录</button></div>
         <div id="extra-directories" class="directory-list"></div>
       </section>
-      <section><h2>显示</h2><div class="settings-grid">
-        <label>宠物大小 <input id="scale" type="range" min="0.4" max="2" step="0.01" /><output id="scale-value"></output></label>
-        <label>宠物透明度 <input id="pet-opacity" type="range" min="0.2" max="1" step="0.01" /><output id="pet-opacity-value"></output></label>
-        <label>气泡大小 <input id="bubble-scale" type="range" min="0.65" max="1.5" step="0.01" /><output id="bubble-scale-value"></output></label>
-        <label>气泡透明度 <input id="bubble-opacity" type="range" min="0.2" max="1" step="0.01" /><output id="bubble-opacity-value"></output></label>
-        <label><input id="always-on-top" type="checkbox" /> 始终置顶</label>
-        <label><input id="mouse-passthrough" type="checkbox" /> 鼠标穿透</label>
-        <label><input id="lock-position" type="checkbox" /> 锁定位置</label>
-        <label><input id="launch-at-login" type="checkbox" /> 登录时启动</label>
-      </div><button id="reset-position" class="secondary">恢复默认位置</button></section>
-      <section><h2>行为</h2><div class="settings-grid">
-        <label><input id="follow-pointer" type="checkbox" /> 空闲时看向鼠标</label>
-        <label><input id="click-wave" type="checkbox" /> 单击挥手</label>
-        <label><input id="double-jump" type="checkbox" /> 双击跳跃</label>
-        <label>响应半径 <input id="pointer-radius" type="range" min="100" max="1200" step="50" /><output id="pointer-radius-value"></output></label>
-        <label>中心死区 <input id="pointer-deadzone" type="range" min="0" max="120" step="4" /><output id="pointer-deadzone-value"></output></label>
+      <section><h2 data-i18n="Display">显示</h2><div class="settings-grid">
+        <label data-i18n="Pet size">宠物大小 <input id="scale" type="range" min="0.4" max="2" step="0.01" /><output id="scale-value"></output></label>
+        <label data-i18n="Pet opacity">宠物透明度 <input id="pet-opacity" type="range" min="0.2" max="1" step="0.01" /><output id="pet-opacity-value"></output></label>
+        <label data-i18n="Bubble size">气泡大小 <input id="bubble-scale" type="range" min="0.65" max="1.5" step="0.01" /><output id="bubble-scale-value"></output></label>
+        <label data-i18n="Bubble opacity">气泡透明度 <input id="bubble-opacity" type="range" min="0.2" max="1" step="0.01" /><output id="bubble-opacity-value"></output></label>
+        <label data-i18n="Always on top"><input id="always-on-top" type="checkbox" /> 始终置顶</label>
+        <label data-i18n="Mouse passthrough"><input id="mouse-passthrough" type="checkbox" /> 鼠标穿透</label>
+        <label data-i18n="Lock position"><input id="lock-position" type="checkbox" /> 锁定位置</label>
+        <label data-i18n="Launch at login"><input id="launch-at-login" type="checkbox" /> 登录时启动</label>
+      </div><button id="reset-position" class="secondary" data-i18n="Restore Default Position">恢复默认位置</button></section>
+      <section><h2 data-i18n="Behavior">行为</h2><div class="settings-grid">
+        <label data-i18n="Look at pointer while idle"><input id="follow-pointer" type="checkbox" /> 空闲时看向鼠标</label>
+        <label data-i18n="Wave on click"><input id="click-wave" type="checkbox" /> 单击挥手</label>
+        <label data-i18n="Jump on double-click"><input id="double-jump" type="checkbox" /> 双击跳跃</label>
+        <label data-i18n="Response radius">响应半径 <input id="pointer-radius" type="range" min="100" max="1200" step="50" /><output id="pointer-radius-value"></output></label>
+        <label data-i18n="Center dead zone">中心死区 <input id="pointer-deadzone" type="range" min="0" max="120" step="4" /><output id="pointer-deadzone-value"></output></label>
       </div></section>
+      <section class="language-settings">
+        <label class="language-setting-row">
+          <strong class="language-setting-label" data-i18n="Language">语言</strong>
+          <span class="language-select-control"><select id="language" aria-label="语言" data-i18n-aria-label="Language"><option value="system" data-i18n="Follow system">跟随系统</option><option value="cn">简体中文</option><option value="en">English</option></select></span>
+        </label>
+      </section>
       </div>
       <div class="settings-panel" data-settings-panel="agents" role="tabpanel" hidden>
       <div class="agent-settings-layout">
       <aside class="agent-settings-sidebar">
-        <p class="agent-settings-label">已支持的智能体</p>
-        <nav id="agent-settings-nav" class="agent-settings-nav" aria-label="选择智能体" role="tablist"></nav>
+        <p class="agent-settings-label" data-i18n="Supported agents">已支持的智能体</p>
+        <nav id="agent-settings-nav" class="agent-settings-nav" aria-label="选择智能体" data-i18n-aria-label="Choose an agent" role="tablist"></nav>
       </aside>
       <div class="agent-settings-content">
       <div id="agent-settings-codex" class="agent-settings-panel" data-agent-panel="codex" role="tabpanel">
-      <section><div class="agent-detail-heading"><h2>Codex 连接</h2><label class="agent-link-toggle"><span>状态联动</span><input id="codex-link" type="checkbox" disabled /><span class="agent-link-toggle-track" aria-hidden="true"></span></label></div>
+      <section><div class="agent-detail-heading"><h2 data-i18n="Codex Connection">Codex 连接</h2><label class="agent-link-toggle"><span data-i18n="Status integration">状态联动</span><input id="codex-link" type="checkbox" disabled /><span class="agent-link-toggle-track" aria-hidden="true"></span></label></div>
         <div id="codex-integration" class="integration-card" data-state="checking">
           <div class="integration-heading">
             <span class="integration-dot" aria-hidden="true"></span>
             <div class="integration-copy">
-              <strong id="codex-integration-title">正在检查 Codex 连接…</strong>
-              <p id="codex-integration-detail">Agent Cat 正在检查 Hook 配置和本地状态接收器。</p>
+              <strong id="codex-integration-title" data-i18n="Checking the Codex connection…">正在检查 Codex 连接…</strong>
+              <p id="codex-integration-detail" data-i18n="Agent Cat is checking the Hook configuration and local status receiver.">Agent Cat 正在检查 Hook 配置和本地状态接收器。</p>
             </div>
-            <span id="codex-integration-badge" class="integration-badge">检查中</span>
+            <span id="codex-integration-badge" class="integration-badge" data-i18n="Checking">检查中</span>
           </div>
           <div class="integration-meta">
-            <span><small>Hook 配置</small><strong id="hook-status">检查中</strong></span>
-            <span><small>状态接收器</small><strong id="receiver-status">检查中</strong></span>
-            <span><small>最后事件</small><strong id="last-event-status">暂无</strong></span>
+            <span><small data-i18n="Hook configuration">Hook 配置</small><strong id="hook-status" data-i18n="Checking">检查中</strong></span>
+            <span><small data-i18n="Status receiver">状态接收器</small><strong id="receiver-status" data-i18n="Checking">检查中</strong></span>
+            <span><small data-i18n="Last event">最后事件</small><strong id="last-event-status" data-i18n="None">暂无</strong></span>
           </div>
           <div class="button-row">
-            <button id="connect-codex">一键连接并测试</button>
-            <button id="install-hook" class="secondary">安装 / 修复</button>
-            <button id="uninstall-hook" class="danger">卸载</button>
-            <button id="test-hook" class="secondary">重新测试</button>
+            <button id="connect-codex" data-i18n="Connect and Test">一键连接并测试</button>
+            <button id="install-hook" class="secondary" data-i18n="Install / Repair">安装 / 修复</button>
+            <button id="uninstall-hook" class="danger" data-i18n="Uninstall">卸载</button>
+            <button id="test-hook" class="secondary" data-i18n="Test Again">重新测试</button>
           </div>
         </div>
-        <h3 class="agent-display-heading">显示选项</h3>
+        <h3 class="agent-display-heading" data-i18n="Display options">显示选项</h3>
         <div class="settings-grid">
-          <label><input id="show-live-status" type="checkbox" /> 在宠物旁显示实时状态</label>
-          <label><input id="show-task-summary" type="checkbox" /> 显示任务摘要</label>
+          <label data-i18n="Show live status next to the pet"><input id="show-live-status" type="checkbox" /> 在宠物旁显示实时状态</label>
+          <label data-i18n="Show task summaries"><input id="show-task-summary" type="checkbox" /> 显示任务摘要</label>
         </div>
-        <p class="privacy-note">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
+        <p class="privacy-note" data-i18n="Task summaries use only the first non-empty line of the user prompt, up to 80 characters. They are held in memory for live display and are never written to Agent Cat configuration or history. Tool arguments, file contents, and terminal output are never read or displayed.">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
       </section>
       </div>
       <div id="agent-settings-claude-code" class="agent-settings-panel" data-agent-panel="claude-code" role="tabpanel" hidden>
-      <section><div class="agent-detail-heading"><h2>Claude Code 连接</h2><label class="agent-link-toggle"><span>状态联动</span><input id="claude-code-link" type="checkbox" disabled /><span class="agent-link-toggle-track" aria-hidden="true"></span></label></div>
+      <section><div class="agent-detail-heading"><h2 data-i18n="Claude Code Connection">Claude Code 连接</h2><label class="agent-link-toggle"><span data-i18n="Status integration">状态联动</span><input id="claude-code-link" type="checkbox" disabled /><span class="agent-link-toggle-track" aria-hidden="true"></span></label></div>
         <div id="claude-code-integration" class="integration-card" data-state="checking">
           <div class="integration-heading">
             <span class="integration-dot" aria-hidden="true"></span>
             <div class="integration-copy">
-              <strong id="claude-code-integration-title">正在检查 Claude Code 连接…</strong>
-              <p id="claude-code-integration-detail">Agent Cat 正在检查 Hook 配置和本地状态接收器。</p>
+              <strong id="claude-code-integration-title" data-i18n="Checking the Claude Code connection…">正在检查 Claude Code 连接…</strong>
+              <p id="claude-code-integration-detail" data-i18n="Agent Cat is checking the Hook configuration and local status receiver.">Agent Cat 正在检查 Hook 配置和本地状态接收器。</p>
             </div>
-            <span id="claude-code-integration-badge" class="integration-badge">检查中</span>
+            <span id="claude-code-integration-badge" class="integration-badge" data-i18n="Checking">检查中</span>
           </div>
           <div class="integration-meta">
-            <span><small>Hook 配置</small><strong id="claude-code-hook-status">检查中</strong></span>
-            <span><small>状态接收器</small><strong id="claude-code-receiver-status">检查中</strong></span>
-            <span><small>最后事件</small><strong id="claude-code-last-event-status">暂无</strong></span>
+            <span><small data-i18n="Hook configuration">Hook 配置</small><strong id="claude-code-hook-status" data-i18n="Checking">检查中</strong></span>
+            <span><small data-i18n="Status receiver">状态接收器</small><strong id="claude-code-receiver-status" data-i18n="Checking">检查中</strong></span>
+            <span><small data-i18n="Last event">最后事件</small><strong id="claude-code-last-event-status" data-i18n="None">暂无</strong></span>
           </div>
           <div class="button-row">
-            <button id="connect-claude-code">一键连接并测试</button>
-            <button id="install-claude-code-hook" class="secondary">安装 / 修复</button>
-            <button id="uninstall-claude-code-hook" class="danger">卸载</button>
-            <button id="test-claude-code-hook" class="secondary">重新测试</button>
+            <button id="connect-claude-code" data-i18n="Connect and Test">一键连接并测试</button>
+            <button id="install-claude-code-hook" class="secondary" data-i18n="Install / Repair">安装 / 修复</button>
+            <button id="uninstall-claude-code-hook" class="danger" data-i18n="Uninstall">卸载</button>
+            <button id="test-claude-code-hook" class="secondary" data-i18n="Test Again">重新测试</button>
           </div>
         </div>
-        <h3 class="agent-display-heading">显示选项</h3>
+        <h3 class="agent-display-heading" data-i18n="Display options">显示选项</h3>
         <div class="settings-grid">
-          <label><input id="claude-code-show-live-status" type="checkbox" /> 在宠物旁显示实时状态</label>
-          <label><input id="claude-code-show-task-summary" type="checkbox" /> 显示任务摘要</label>
+          <label data-i18n="Show live status next to the pet"><input id="claude-code-show-live-status" type="checkbox" /> 在宠物旁显示实时状态</label>
+          <label data-i18n="Show task summaries"><input id="claude-code-show-task-summary" type="checkbox" /> 显示任务摘要</label>
         </div>
-        <p class="privacy-note">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
+        <p class="privacy-note" data-i18n="Task summaries use only the first non-empty line of the user prompt, up to 80 characters. They are held in memory for live display and are never written to Agent Cat configuration or history. Tool arguments, file contents, and terminal output are never read or displayed.">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
       </section>
       </div>
       </div>
@@ -115,22 +121,22 @@
       </div>
       <div class="settings-panel" data-settings-panel="about" role="tabpanel" hidden>
         <section class="about-card">
-          <div class="about-identity"><img class="about-logo" alt="" /><div><h2>Agent Cat</h2><p class="muted">让 AI Agent 的工作状态变得直观而有趣。</p></div></div>
-          <div class="about-version"><span>当前版本</span><strong id="current-version">读取中…</strong></div>
+          <div class="about-identity"><img class="about-logo" alt="" /><div><h2>Agent Cat</h2><p class="muted" data-i18n="Make AI agent activity visible and delightful.">让 AI Agent 的工作状态变得直观而有趣。</p></div></div>
+          <div class="about-version"><span data-i18n="Current version">当前版本</span><strong id="current-version" data-i18n="Loading…">读取中…</strong></div>
         </section>
         <section>
-          <div class="section-heading"><div><h2>软件更新</h2><p class="muted">从 GitHub Releases 检查公开发布的新版本。</p></div></div>
+          <div class="section-heading"><div><h2 data-i18n="Software Updates">软件更新</h2><p class="muted" data-i18n="Check GitHub Releases for publicly available updates.">从 GitHub Releases 检查公开发布的新版本。</p></div></div>
           <div id="update-status-card" class="update-status-card" data-state="idle" aria-live="polite">
             <span class="update-status-icon" aria-hidden="true"><span class="update-status-glyph">↻</span></span>
             <div class="update-status-copy">
-              <strong id="update-status-title">尚未检查更新</strong>
-              <p id="update-status-detail">检查到新版本后会在后台下载，并在签名验证通过后等待安装。</p>
+              <strong id="update-status-title" data-i18n="Updates have not been checked">尚未检查更新</strong>
+              <p id="update-status-detail" data-i18n="New versions are downloaded in the background and wait for installation only after signature verification succeeds.">检查到新版本后会在后台下载，并在签名验证通过后等待安装。</p>
               <div id="update-progress" class="update-progress" hidden><span id="update-progress-bar"></span></div>
             </div>
-            <div class="update-status-actions"><button id="check-update">检查更新</button><button id="install-update" hidden>安装并重启</button></div>
+            <div class="update-status-actions"><button id="check-update" data-i18n="Check for Updates">检查更新</button><button id="install-update" data-i18n="Install and Restart" hidden>安装并重启</button></div>
           </div>
         </section>
-        <section><h2>项目</h2><p class="about-copy">Agent Cat 是一个开源桌面伴侣。更新检查不会上传配置、提示词、文件内容或使用记录。</p><div class="about-meta"><span><small>支持平台</small><strong>macOS · Windows</strong></span><span><small>当前集成</small><strong>OpenAI Codex · Claude Code</strong></span></div></section>
+        <section><h2 data-i18n="Project">项目</h2><p class="about-copy" data-i18n="Agent Cat is an open-source desktop companion. Update checks never upload configuration, prompts, file contents, or usage history.">Agent Cat 是一个开源桌面伴侣。更新检查不会上传配置、提示词、文件内容或使用记录。</p><div class="about-meta"><span><small data-i18n="Supported platforms">支持平台</small><strong>macOS · Windows</strong></span><span><small data-i18n="Current integrations">当前集成</small><strong>OpenAI Codex · Claude Code</strong></span></div></section>
       </div>
       <div id="settings-message" role="status"></div>
       </div>

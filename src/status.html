@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Cat 实时状态</title>
+    <title data-i18n="Agent Cat Live Status">Agent Cat 实时状态</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="status-page">
     <div id="status-shell" hidden>
-      <main id="live-status" aria-live="polite" aria-label="Codex 会话状态">
+      <main id="live-status" aria-live="polite" aria-label="Agent 会话状态" data-i18n-aria-label="Agent session status">
         <div id="status-stack" role="list"></div>
       </main>
       <button id="status-toggle" type="button" aria-controls="status-stack" aria-expanded="false" hidden></button>

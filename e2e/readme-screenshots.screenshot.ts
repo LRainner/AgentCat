@@ -14,6 +14,7 @@ const showcaseDocument = readFileSync(path.join(showcaseDirectory, "index.html")
 
 const config = {
   version: 1,
+  language: "cn",
   pet: null,
   petSources: { scanCodexBuiltin: true, scanCodexCustom: true, extraDirectories: [] },
   window: {

@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ANIMATIONS, LOOK_ANGLES, type AnimationName } from "./animation-table";
 import { PetRenderer } from "./pet-renderer";
-import type { CatalogResult, PetDescriptor } from "./types";
+import type { AppConfig, CatalogResult, PetDescriptor } from "./types";
+import { nativeMessages, setLanguage, t, translateDocument } from "./i18n";
 
 const select = document.querySelector<HTMLSelectElement>("#debug-pet")!;
 const sprite = document.querySelector<HTMLElement>("#debug-sprite")!;
@@ -13,10 +14,16 @@ let pets: PetDescriptor[] = [];
 let active: PetDescriptor;
 type SpriteInspection = { unusedCells: number; nonTransparentPixels: number; transparent: boolean };
 
-renderer.onFrame = (frame) => { info.textContent = `模式: ${frame.mode}\n行: ${frame.row}\n列: ${frame.column}\n帧: ${frame.frame}${frame.angle === undefined ? "" : `\n角度: ${String(frame.angle).padStart(3, "0")}°`}`; };
+renderer.onFrame = (frame) => {
+  const frameInfo = t("Mode: {mode}\nRow: {row}\nColumn: {column}\nFrame: {frame}", frame);
+  info.textContent = frame.angle === undefined ? frameInfo : `${frameInfo}\n${t("Angle: {angle}°", { angle: String(frame.angle).padStart(3, "0") })}`;
+};
 
 async function initialize(): Promise<void> {
-  const catalog = await invoke<CatalogResult>("scan_pets");
+  const [catalog, config] = await Promise.all([invoke<CatalogResult>("scan_pets"), invoke<AppConfig>("get_config")]);
+  setLanguage(config.language);
+  translateDocument();
+  void invoke("sync_native_i18n", { value: nativeMessages() });
   pets = catalog.pets;
   select.replaceChildren(...pets.map((pet, index) => {
     const option = document.createElement("option");
@@ -24,7 +31,7 @@ async function initialize(): Promise<void> {
     option.textContent = `${pet.displayName} · v${pet.version}`;
     return option;
   }));
-  if (!pets.length) { validation.textContent = "没有可测试的宠物"; return; }
+  if (!pets.length) { validation.textContent = t("No pets are available for testing"); return; }
   const initialIndex = Math.max(0, pets.findIndex((pet) => pet.source === "codex-builtin"));
   select.value = String(initialIndex);
   await loadPet(initialIndex);
@@ -38,7 +45,7 @@ async function loadPet(index: number): Promise<void> {
   const scale = Number((document.querySelector<HTMLInputElement>("#debug-scale")!).value);
   await renderer.setPet(active, image, scale);
   const inspection = await invoke<SpriteInspection>("inspect_sprite", { path: active.spritesheetPath, version: active.version });
-  validation.innerHTML = `<strong>${escapeHtml(active.displayName)}</strong> · ${escapeHtml(active.source)}<br><strong class="status-ok">尺寸正确</strong><br>${active.width}×${active.height} · 8×${active.version === 2 ? 11 : 9} · cell 192×208<br><strong class="${inspection.transparent ? "status-ok" : "status-error"}">${inspection.transparent ? "未使用格完全透明" : `未使用格含 ${inspection.nonTransparentPixels} 个非透明像素`}</strong> · ${inspection.unusedCells} 格<br><code>${escapeHtml(active.spritesheetPath)}</code>`;
+  validation.innerHTML = `<strong>${escapeHtml(active.displayName)}</strong> · ${escapeHtml(active.source)}<br><strong class="status-ok">${t("Dimensions are correct")}</strong><br>${active.width}×${active.height} · 8×${active.version === 2 ? 11 : 9} · cell 192×208<br><strong class="${inspection.transparent ? "status-ok" : "status-error"}">${inspection.transparent ? t("Unused cells are fully transparent") : t("Unused cells contain {count} non-transparent pixels", { count: inspection.nonTransparentPixels })}</strong> · ${t("{count} cells", { count: inspection.unusedCells })}<br><code>${escapeHtml(active.spritesheetPath)}</code>`;
   document.querySelector<HTMLElement>("#look-buttons")!.classList.toggle("disabled", active.version !== 2);
 }
 

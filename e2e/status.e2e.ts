@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const config = {
   version: 1,
+  language: "cn",
   pet: null,
   petSources: { scanCodexBuiltin: true, scanCodexCustom: true, extraDirectories: [] },
   window: {

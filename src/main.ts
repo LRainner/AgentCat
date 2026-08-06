@@ -22,6 +22,7 @@ import {
   UPDATE_CHECK_RETRY_MS,
   UPDATE_STATE_EVENT,
 } from "./update-indicator";
+import { nativeMessages, setLanguage, t } from "./i18n";
 
 const stage = document.querySelector<HTMLElement>("#pet-stage")!;
 const sprite = document.querySelector<HTMLElement>("#pet-sprite")!;
@@ -114,13 +115,17 @@ async function refreshActivePet(): Promise<void> {
   reactions.refresh();
   configurePointer();
   errorBox.textContent = config.pet && config.pet.manifestPath !== nextPet.manifestPath
-    ? "上次选择的宠物不可用，已临时回退"
+    ? t("The previously selected pet is unavailable. A temporary fallback is active.")
     : "";
 }
 
 async function applyConfig(next: AppConfig, forcePetRefresh = false): Promise<void> {
   const previous = config;
   config = next;
+  if (!previous || previous.language !== config.language) {
+    setLanguage(config.language);
+    void invoke("sync_native_i18n", { value: nativeMessages() });
+  }
   if (previous && agentRuntimeSignature(previous) !== agentRuntimeSignature(config)) reactions.reset();
   stage.style.setProperty("--pet-opacity", String(Math.min(1, Math.max(0.2, config.window.petOpacity))));
   const petChanged = forcePetRefresh
