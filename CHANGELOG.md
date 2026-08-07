@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/LRainner/AgentCat/compare/v1.7.0...v1.8.0) (2026-08-07)
+
+
+### Features
+
+* **i18n:** add English and Chinese localization ([#44](https://github.com/LRainner/AgentCat/issues/44)) ([1594d3e](https://github.com/LRainner/AgentCat/commit/1594d3e2c40f4c7c45af6a7e9507f7c7cf400cba))
+* **status:** allow dismissing live bubbles ([#42](https://github.com/LRainner/AgentCat/issues/42)) ([5c91d5e](https://github.com/LRainner/AgentCat/commit/5c91d5efad387b03a757d68551c4c1344172cc01))
+
 ## [1.7.0](https://github.com/LRainner/AgentCat/compare/v1.6.0...v1.7.0) (2026-08-05)
 
 
