@@ -12,6 +12,7 @@ import {
   showsAgentTaskSummary,
   type RawAgentEvent,
 } from "./agents";
+import { nativeMessages, setLanguage, t, translateDocument } from "./i18n";
 
 const statusWindow = getCurrentWindow();
 const shell = document.querySelector<HTMLElement>("#status-shell")!;
@@ -96,7 +97,7 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
             </div>
           </div>
           <span class="status-indicator" aria-hidden="true"></span>
-          <button class="status-dismiss" type="button" aria-label="隐藏当前任务状态" title="隐藏当前任务状态"></button>
+          <button class="status-dismiss" type="button" aria-label="${t("Hide the current task status")}" title="${t("Hide the current task status")}"></button>
         </div>`;
       stack.append(card);
     }
@@ -113,14 +114,14 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
     source.hidden = !showTaskSummary;
     source.textContent = showTaskSummary ? status.agentName : "";
     const dismiss = card.querySelector<HTMLButtonElement>(".status-dismiss")!;
-    dismiss.setAttribute("aria-label", `隐藏 ${status.agentName} 当前任务状态`);
-    dismiss.title = `隐藏 ${status.agentName} 当前任务状态`;
+    dismiss.setAttribute("aria-label", t("Hide the current {agent} task status", { agent: status.agentName }));
+    dismiss.title = t("Hide the current {agent} task status", { agent: status.agentName });
   });
 
   shell.dataset.expanded = String(expanded);
   toggle.hidden = statuses.length < 2;
   toggle.setAttribute("aria-expanded", String(expanded));
-  toggle.setAttribute("aria-label", `${statuses.length} 个 Agent 会话，点击${expanded ? "收起" : "展开"}`);
+  toggle.setAttribute("aria-label", t("{count} agent sessions. Click to {action}.", { count: statuses.length, action: expanded ? t("collapse") : t("expand") }));
   const height = contentHeight(statuses.length);
   shell.style.setProperty("--content-height", `${height}px`);
   shell.hidden = false;
@@ -153,8 +154,15 @@ async function loadConfig(): Promise<void> {
 
 function applyConfig(next: AppConfig): void {
   const previousSignature = config ? agentRuntimeSignature(config) : null;
+  const languageChanged = !config || config.language !== next.language;
   const nextSignature = agentRuntimeSignature(next);
   config = next;
+  if (languageChanged) {
+    setLanguage(config.language);
+    translateDocument();
+    void invoke("sync_native_i18n", { value: nativeMessages() });
+    controller.refreshLanguage();
+  }
   if (previousSignature !== null && previousSignature !== nextSignature) {
     lastEventKey = "";
     controller.reset();

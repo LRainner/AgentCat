@@ -17,6 +17,8 @@ static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub version: u8,
+    #[serde(default)]
+    pub language: LanguagePreference,
     pub pet: Option<SelectedPet>,
     pub pet_sources: PetSourcesConfig,
     pub window: WindowConfig,
@@ -24,6 +26,15 @@ pub struct AppConfig {
     pub codex: CodexConfig,
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum LanguagePreference {
+    #[default]
+    System,
+    En,
+    Cn,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +128,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             version: 1,
+            language: LanguagePreference::System,
             pet: None,
             pet_sources: PetSourcesConfig {
                 scan_codex_builtin: true,
@@ -258,7 +270,44 @@ pub fn ensure_private_dir(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::de::{Error as _, IgnoredAny, MapAccess, Visitor};
+    use serde::Deserializer as _;
     use serde_json::json;
+    use std::{collections::HashSet, fmt};
+
+    struct UniqueTranslationKeys;
+
+    impl<'de> Visitor<'de> for UniqueTranslationKeys {
+        type Value = usize;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("an i18n JSON object with unique top-level keys")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut keys = HashSet::new();
+            while let Some(key) = map.next_key::<String>()? {
+                if !keys.insert(key.clone()) {
+                    return Err(A::Error::custom(format!("duplicate i18n key: {key}")));
+                }
+                map.next_value::<IgnoredAny>()?;
+            }
+            Ok(keys.len())
+        }
+    }
+
+    #[test]
+    fn i18n_message_keys_are_unique() {
+        let source = include_str!("../../src/i18n/messages.json");
+        let mut deserializer = serde_json::Deserializer::from_str(source);
+        let key_count = deserializer
+            .deserialize_map(UniqueTranslationKeys)
+            .expect("i18n messages must be valid JSON with unique top-level keys");
+        assert!(key_count > 0);
+    }
 
     #[test]
     fn new_display_fields_have_backward_compatible_defaults() {
@@ -291,6 +340,7 @@ mod tests {
         })).unwrap();
         assert!(!app.claude_code.hooks_enabled);
         assert!(app.claude_code.show_live_status);
+        assert_eq!(app.language, LanguagePreference::System);
     }
 
     #[cfg(unix)]

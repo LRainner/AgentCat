@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const config = {
   version: 1,
+  language: "cn",
   pet: null,
   petSources: { scanCodexBuiltin: true, scanCodexCustom: true, extraDirectories: [] },
   window: {
@@ -194,6 +195,28 @@ test("shows native pet directory paths and opens the default directory", async (
   ).__TAURI_TEST_COMMANDS__)).toContain("reveal_pet_directory");
 });
 
+test("switches languages without translating language names or native paths", async ({ page }) => {
+  await page.goto("/settings.html");
+  const language = page.locator("#language");
+  const directory = page.locator("#extra-directory");
+
+  await language.selectOption("en");
+  await expect(page.getByRole("heading", { name: "General" })).toBeVisible();
+  await expect(page.locator("#current-version")).toHaveText("v1.1.0");
+  await expect(language.locator('option[value="system"]')).toHaveText("Follow system");
+  await expect(language.locator('option[value="cn"]')).toHaveText("简体中文");
+  await expect(language.locator('option[value="en"]')).toHaveText("English");
+  await expect(directory).toHaveAttribute("placeholder", "C:\\Users\\Tester\\Downloads\\codex-pets");
+
+  await language.selectOption("cn");
+  await expect(page.getByRole("heading", { name: "通用" })).toBeVisible();
+  await expect(page.locator("#current-version")).toHaveText("v1.1.0");
+  await expect(language.locator('option[value="system"]')).toHaveText("跟随系统");
+  await expect(language.locator('option[value="cn"]')).toHaveText("简体中文");
+  await expect(language.locator('option[value="en"]')).toHaveText("English");
+  await expect(directory).toHaveAttribute("placeholder", "C:\\Users\\Tester\\Downloads\\codex-pets");
+});
+
 test("shows an error when the default pet directory cannot be opened", async ({ page }) => {
   await page.goto("/settings.html");
   await page.evaluate(() => (
@@ -269,6 +292,23 @@ test("downloads a signed update and offers installation", async ({ page }) => {
     window as unknown as { __TAURI_TEST_COMMANDS__: string[] }
   ).__TAURI_TEST_COMMANDS__)).toContain("plugin:updater|install");
   await expect(page.locator("#about-update-dot")).toBeHidden();
+});
+
+test("keeps the downloaded update state when switching languages", async ({ page }) => {
+  await page.goto("/settings.html#about");
+  await page.getByRole("button", { name: "检查更新" }).click();
+  await expect(page.locator("#update-status-card")).toHaveAttribute("data-state", "ready");
+
+  await page.getByRole("tab", { name: /通用/ }).click();
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("tab", { name: /About/ }).click();
+
+  await expect(page.locator("#current-version")).toHaveText("v1.1.0");
+  await expect(page.locator("#update-status-title")).toHaveText("v1.2.0 is ready");
+  await expect(page.locator("#update-status-detail")).toHaveText(
+    "The update package was downloaded and passed signature verification. It is safe to install.",
+  );
+  await expect(page.getByRole("button", { name: "Install and Restart" })).toBeVisible();
 });
 
 test("keeps the update status tile still while the progress ring spins", async ({ page }) => {

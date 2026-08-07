@@ -13,7 +13,7 @@ mod window_drag;
 use base64::Engine;
 use config::{AppConfig, WindowConfig};
 use pet_catalog::CatalogResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -44,10 +44,27 @@ fn set_debug_dock_icon() {
 
 struct TrayMenuState {
     show_pet: CheckMenuItem<tauri::Wry>,
+    settings: MenuItem<tauri::Wry>,
     always_on_top: CheckMenuItem<tauri::Wry>,
     mouse_passthrough: CheckMenuItem<tauri::Wry>,
     lock_position: CheckMenuItem<tauri::Wry>,
     launch_at_login: CheckMenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeMessages {
+    settings_title: String,
+    status_title: String,
+    debug_title: String,
+    show_pet: String,
+    settings: String,
+    always_on_top: String,
+    mouse_passthrough: String,
+    lock_position: String,
+    launch_at_login: String,
+    quit: String,
 }
 
 struct StatusWindowState(Mutex<f64>);
@@ -312,6 +329,45 @@ fn sync_tray_menu(app: &tauri::AppHandle, value: &WindowConfig) {
     }
 }
 
+#[tauri::command]
+fn sync_native_i18n(app: tauri::AppHandle, value: NativeMessages) -> Result<(), String> {
+    if let Some(menu) = app.try_state::<TrayMenuState>() {
+        menu.show_pet
+            .set_text(value.show_pet)
+            .map_err(|error| error.to_string())?;
+        menu.settings
+            .set_text(value.settings)
+            .map_err(|error| error.to_string())?;
+        menu.always_on_top
+            .set_text(value.always_on_top)
+            .map_err(|error| error.to_string())?;
+        menu.mouse_passthrough
+            .set_text(value.mouse_passthrough)
+            .map_err(|error| error.to_string())?;
+        menu.lock_position
+            .set_text(value.lock_position)
+            .map_err(|error| error.to_string())?;
+        menu.launch_at_login
+            .set_text(value.launch_at_login)
+            .map_err(|error| error.to_string())?;
+        menu.quit
+            .set_text(value.quit)
+            .map_err(|error| error.to_string())?;
+    }
+    for (label, title) in [
+        ("settings", value.settings_title),
+        ("status", value.status_title),
+        ("pet-debug", value.debug_title),
+    ] {
+        if let Some(window) = app.get_webview_window(label) {
+            window
+                .set_title(&title)
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn toggle_window_setting(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
     let mut value = config::load()?;
     capture_main_position(app, &mut value.window)?;
@@ -545,11 +601,17 @@ fn probe_hook(agent: String) -> Result<hook_server::HookRuntimeStatus, String> {
 
 fn show_aux_window(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     let (label, url, title, width, height) = match kind {
-        "settings" => ("settings", "settings.html", "Agent Cat 设置", 920.0, 720.0),
+        "settings" => (
+            "settings",
+            "settings.html",
+            "Agent Cat Settings",
+            920.0,
+            720.0,
+        ),
         "pet-debug" => (
             "pet-debug",
             "pet-debug.html",
-            "Agent Cat 动画测试器",
+            "Agent Cat Animation Tester",
             980.0,
             780.0,
         ),
@@ -633,10 +695,12 @@ fn setup_tray(app: &tauri::App, value: &AppConfig) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     app.manage(TrayMenuState {
         show_pet,
+        settings,
         always_on_top,
         mouse_passthrough,
         lock_position,
         launch_at_login,
+        quit,
     });
     let mut builder = TrayIconBuilder::with_id("agent-cat-tray")
         .menu(&menu)
@@ -736,6 +800,7 @@ pub fn run() {
             apply_window_settings,
             apply_config_preview,
             sync_status_window,
+            sync_native_i18n,
             save_main_position,
             reset_main_position,
             autostart_status,

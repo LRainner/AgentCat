@@ -22,6 +22,7 @@ export type CatalogResult = {
 
 export type AppConfig = {
   version: 1;
+  language: "system" | "en" | "cn";
   pet: { source: PetSource; id: string; manifestPath: string } | null;
   petSources: { scanCodexBuiltin: boolean; scanCodexCustom: boolean; extraDirectories: string[] };
   window: { x: number | null; y: number | null; scale: number; petOpacity: number; alwaysOnTop: boolean; mousePassthrough: boolean; lockPosition: boolean };
