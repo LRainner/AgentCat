@@ -149,6 +149,35 @@ fn patch_contains_marker(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn patch_is_unreadable(path: &Path) -> bool {
+    path.is_file() && fs::read_to_string(path).is_err()
+}
+
+/// Remove our insert block from one patch file. `required` marks a layer that
+/// is the active install target, whose read/write failures must propagate.
+/// Non-active layers are swept best-effort: a corrupted or unreadable file
+/// there must never block uninstall from deleting the plugin source or block a
+/// reconnect from writing the active layer.
+fn remove_marker_from_patch(path: &Path, required: bool) -> Result<(), String> {
+    if !path.is_file() {
+        return Ok(());
+    }
+    let content = match fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(_error) if !required => return Ok(()),
+        Err(error) => return Err(format!("读取 {} 失败：{error}", path.display())),
+    };
+    let updated = remove_insert_block(&content);
+    if updated == content {
+        return Ok(());
+    }
+    match config::atomic_write(path, updated.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(_error) if !required => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 fn node_modules_dir(home: &Path) -> PathBuf {
     home.join("profiles").join("node_modules")
 }
@@ -337,12 +366,18 @@ fn status_at(home: &Path) -> Result<DshHookStatus, String> {
     let has_residual_markers = all_patch_paths(home)
         .iter()
         .any(|path| !paths.contains(path) && patch_contains_marker(path));
+    let has_unreadable_layers = all_patch_paths(home)
+        .iter()
+        .any(|path| patch_is_unreadable(path));
     let plugin_root = node_modules_dir(home).join(PLUGIN_NAME);
     let plugin_source_exists = PLUGIN_FILES
         .iter()
         .all(|(relative, _)| plugin_root.join(relative).is_file());
-    let installed = patch_installed && plugin_source_exists && !has_residual_markers;
-    let message = if has_residual_markers {
+    let installed =
+        patch_installed && plugin_source_exists && !has_residual_markers && !has_unreadable_layers;
+    let message = if has_unreadable_layers {
+        "部分补丁层无法读取，请检查权限后重新连接".to_string()
+    } else if has_residual_markers {
         "检测到其他补丁层存在残留安装，请重新连接以修复".to_string()
     } else if installed {
         "DeepSeek Harness 插件已安装".to_string()
@@ -387,15 +422,10 @@ fn install_at(home: &Path) -> Result<DshHookStatus, String> {
     // Remove our marker from any layer that is no longer the active write
     // target, so a layer switch (e.g. the user later created a home patch)
     // cannot leave duplicate ids or point at a deleted plugin package.
+    // Non-active layers are swept best-effort and never abort the reconnect.
     for path in all_patch_paths(home) {
-        if paths.contains(&path) || !path.is_file() {
-            continue;
-        }
-        let content = fs::read_to_string(&path)
-            .map_err(|error| format!("读取 {} 失败：{error}", path.display()))?;
-        let updated = remove_insert_block(&content);
-        if updated != content {
-            config::atomic_write(&path, updated.as_bytes())?;
+        if !paths.contains(&path) {
+            remove_marker_from_patch(&path, false)?;
         }
     }
     for path in &paths {
@@ -417,16 +447,12 @@ pub fn uninstall() -> Result<DshHookStatus, String> {
 
 fn uninstall_at(home: &Path) -> Result<DshHookStatus, String> {
     // Sweep every layer that could carry our marker, not just the active one,
-    // so a layer switch can never leave a stale entry behind.
+    // so a layer switch can never leave a stale entry behind. Non-active layers
+    // are best-effort: an unreadable file there must not block deletion of the
+    // plugin source.
+    let active = patch_paths(home);
     for path in all_patch_paths(home) {
-        if path.is_file() {
-            let content = fs::read_to_string(&path)
-                .map_err(|error| format!("读取 {} 失败：{error}", path.display()))?;
-            let updated = remove_insert_block(&content);
-            if updated != content {
-                config::atomic_write(&path, updated.as_bytes())?;
-            }
-        }
+        remove_marker_from_patch(&path, active.contains(&path))?;
     }
     remove_plugin_source(home)?;
     status_at(home)
@@ -653,6 +679,50 @@ mod tests {
         assert!(fs::read_to_string(home.join("cordis.patch.yml"))
             .unwrap()
             .contains(PATCH_MARKER));
+
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn uninstall_tolerates_an_unreadable_non_active_patch_layer() {
+        let home = temp_home("unreadable-uninstall");
+        fs::create_dir_all(home.join("profiles").join("web")).unwrap();
+
+        install_at(&home).unwrap();
+        let web_patch = home.join("profiles").join("web").join("cordis.patch.yml");
+        fs::write(home.join("cordis.patch.yml"), "# user\n[]\n").unwrap();
+        fs::write(&web_patch, [0xFF, 0xFE, 0x00, 0x01]).unwrap();
+
+        let status = uninstall_at(&home).unwrap();
+        assert!(!status.installed);
+        assert!(status.message.contains("无法读取"));
+        assert!(!node_modules_dir(&home).join(PLUGIN_NAME).exists());
+        assert_eq!(
+            fs::read_to_string(home.join("cordis.patch.yml")).unwrap(),
+            "# user\n[]\n"
+        );
+        assert!(fs::read_to_string(&web_patch).is_err());
+
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn install_tolerates_an_unreadable_non_active_patch_layer() {
+        let home = temp_home("unreadable-install");
+        fs::create_dir_all(home.join("profiles").join("web")).unwrap();
+
+        install_at(&home).unwrap();
+        let web_patch = home.join("profiles").join("web").join("cordis.patch.yml");
+        fs::write(home.join("cordis.patch.yml"), "# user\n[]\n").unwrap();
+        fs::write(&web_patch, [0xFF, 0xFE, 0x00, 0x01]).unwrap();
+
+        let status = install_at(&home).unwrap();
+        assert!(!status.installed);
+        assert!(status.message.contains("无法读取"));
+        assert!(fs::read_to_string(home.join("cordis.patch.yml"))
+            .unwrap()
+            .contains(PATCH_MARKER));
+        assert!(fs::read_to_string(&web_patch).is_err());
 
         fs::remove_dir_all(&home).unwrap();
     }
