@@ -3,7 +3,6 @@ import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import z from "@deepseek-ai/schemastery";
 import { mapSessionEvent } from "./agent-event.js";
 
 const require = createRequire(import.meta.url);
@@ -13,13 +12,20 @@ const WRITE_TIMEOUT_MS = 150;
 const MAX_QUEUE = 1024;
 const MAX_TOOL_NAMES = 1024;
 
-const Config = z.object({
-  /** Optional override for the Agent Cat socket endpoint. Defaults to the
-   * platform's Agent Cat config directory (macOS Unix socket / Windows port file). */
-  endpoint: z.string(),
-  /** When false, no events are forwarded (useful to disable without unmounting). */
-  enabled: z.boolean().default(true),
-});
+/**
+ * Normalize the two optional patch config fields by hand. This plugin
+ * deliberately has no `static Config` schema: Cordis passes the raw config
+ * through unchanged when no schema is declared, and avoiding a schemastery
+ * runtime import means the installed package only needs files Agent Cat
+ * actually ships (plus the DSH platform itself).
+ */
+function normalizeConfig(config) {
+  const value = config ?? {};
+  return {
+    enabled: typeof value.enabled === "boolean" ? value.enabled : true,
+    endpoint: typeof value.endpoint === "string" && value.endpoint ? value.endpoint : "",
+  };
+}
 
 function defaultEndpoint() {
   if (process.platform === "win32") {
@@ -112,7 +118,6 @@ async function sendAgentCatEvent(endpoint, event) {
  */
 export class AgentCatSessionPlugin {
   static inject = ["sessions"];
-  static Config = Config;
 
   #endpoint;
   #enabled;
@@ -121,8 +126,9 @@ export class AgentCatSessionPlugin {
   #toolNames = new Map();
 
   constructor(ctx, config) {
-    this.#endpoint = config.endpoint || defaultEndpoint();
-    this.#enabled = config.enabled;
+    const normalized = normalizeConfig(config);
+    this.#endpoint = normalized.endpoint || defaultEndpoint();
+    this.#enabled = normalized.enabled;
 
     // Follow every committed session event from process start.
     ctx.on("session/event", (session, event) => {
@@ -218,5 +224,4 @@ export class AgentCatSessionPlugin {
   }
 }
 
-export { Config };
 export default AgentCatSessionPlugin;

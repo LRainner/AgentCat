@@ -130,9 +130,9 @@ To build only the Windows NSIS installer, run `npm run build:windows` on Windows
 ```text
 assets/       Original application and menu bar artwork
 docs/         Product screenshots generated for the README
-plugins/      Agent integration plugins (e.g. dsh-session-agent-cat)
 e2e/          Browser tests and the deterministic screenshot generator
 fixtures/     Deterministic pet packs used by automated tests
+plugins/      Agent integration plugins (e.g. dsh-session-agent-cat)
 src/          HTML, TypeScript, CSS, and frontend tests
 src-tauri/    Rust backend, Tauri configuration, and platform icons
 ```

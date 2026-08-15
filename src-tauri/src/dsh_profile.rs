@@ -113,17 +113,18 @@ fn profile_dirs(home: &Path) -> Vec<PathBuf> {
 }
 
 fn patch_paths(home: &Path) -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    for dir in profile_dirs(home) {
-        paths.push(dir.join("cordis.patch.yml"));
-    }
-    // Home-level user patch layer (applied last, highest priority). We do not
-    // create it — we only patch it when it already exists.
+    // Home-level user patch layer (applied last, highest priority) covers every
+    // profile, so when it exists it is the ONLY layer we patch. Writing the
+    // same plugin id into both a profile layer and the home layer would make
+    // the final entry list contain duplicate ids, which Cordis' loader rejects.
     let home_patch = home.join("cordis.patch.yml");
     if home_patch.is_file() {
-        paths.push(home_patch);
+        return vec![home_patch];
     }
-    paths
+    profile_dirs(home)
+        .into_iter()
+        .map(|dir| dir.join("cordis.patch.yml"))
+        .collect()
 }
 
 fn node_modules_dir(home: &Path) -> PathBuf {
@@ -189,11 +190,12 @@ fn add_insert_block(content: &str) -> Result<String, String> {
 /// Remove our `- insert:` block from the patch text, restoring `[]` when the
 /// result would otherwise be an empty list.
 ///
-/// The block we write is always exactly six lines (the `- insert:` row plus
-/// the five indented lines ending in `enabled: true`). We locate the `- insert:`
-/// line that is immediately followed by our marker and drop those six lines.
-/// Line endings (LF or CRLF) are preserved byte-for-byte for every line we do
-/// not remove.
+/// We locate the `- insert:` line that is immediately followed by our marker
+/// and drop that row plus every following indented or blank line, stopping at
+/// the next top-level line. Deleting by indentation boundary (instead of a
+/// fixed line count) means a hand-edited block can never make us remove
+/// unrelated user content. Line endings (LF or CRLF) are preserved for every
+/// line we do not remove.
 fn remove_insert_block(content: &str) -> String {
     if !content.contains(PATCH_MARKER) {
         return content.to_string();
@@ -221,13 +223,18 @@ fn remove_insert_block(content: &str) -> String {
                 .get(index + 1)
                 .is_some_and(|next| next.trim_start().starts_with(PATCH_MARKER));
         if is_our_insert {
-            // Our insert element is exactly five lines:
-            //   - insert:
-            //       - id: session-agent-cat
-            //         name: 'dsh-session-agent-cat'
-            //         config:
-            //           enabled: true
-            index += 5;
+            // Consume the `- insert:` row, then every indented or blank line
+            // that still belongs to it.
+            index += 1;
+            while index < segments.len() {
+                let bare = segments[index].trim_end_matches(['\r', '\n']);
+                let belongs_to_block =
+                    bare.trim().is_empty() || bare.chars().next().is_some_and(char::is_whitespace);
+                if !belongs_to_block {
+                    break;
+                }
+                index += 1;
+            }
             continue;
         }
         kept.push(segments[index]);
@@ -288,26 +295,35 @@ fn remove_plugin_source(home: &Path) -> Result<(), String> {
 }
 
 pub fn status() -> Result<DshHookStatus, String> {
-    let home = dsh_home()?;
-    let paths = patch_paths(&home);
+    status_at(&dsh_home()?)
+}
+
+fn status_at(home: &Path) -> Result<DshHookStatus, String> {
+    let paths = patch_paths(home);
     let primary = paths
         .first()
         .cloned()
         .unwrap_or_else(|| home.join("cordis.patch.yml"));
-    let patch_installed = paths.iter().any(|path| {
-        fs::read_to_string(path)
-            .map(|content| content.contains(PATCH_MARKER))
-            .unwrap_or(false)
-    });
-    let plugin_root = node_modules_dir(&home).join(PLUGIN_NAME);
-    let plugin_source_exists = ["package.json", "lib/index.js", "lib/agent-event.js"]
+    let patched_count = paths
         .iter()
-        .all(|relative| plugin_root.join(relative).is_file());
+        .filter(|path| {
+            fs::read_to_string(path)
+                .map(|content| content.contains(PATCH_MARKER))
+                .unwrap_or(false)
+        })
+        .count();
+    let patch_installed = !paths.is_empty() && patched_count == paths.len();
+    let plugin_root = node_modules_dir(home).join(PLUGIN_NAME);
+    let plugin_source_exists = PLUGIN_FILES
+        .iter()
+        .all(|(relative, _)| plugin_root.join(relative).is_file());
     let installed = patch_installed && plugin_source_exists;
     let message = if installed {
         "DeepSeek Harness 插件已安装".to_string()
     } else if patch_installed && !plugin_source_exists {
         "插件入口存在，但插件包缺失；请重新连接以修复".to_string()
+    } else if patched_count > 0 && patched_count < paths.len() {
+        "部分补丁层尚未安装，请重新连接以修复".to_string()
     } else {
         "尚未安装 DeepSeek Harness 插件".to_string()
     };
@@ -322,11 +338,14 @@ pub fn status() -> Result<DshHookStatus, String> {
 }
 
 pub fn install() -> Result<DshHookStatus, String> {
-    let home = dsh_home()?;
-    config::ensure_private_dir(&home)?;
-    write_plugin_source(&home)?;
+    install_at(&dsh_home()?)
+}
 
-    let paths = patch_paths(&home);
+fn install_at(home: &Path) -> Result<DshHookStatus, String> {
+    config::ensure_private_dir(home)?;
+    write_plugin_source(home)?;
+
+    let paths = patch_paths(home);
     // Ensure a profile directory exists so there is always at least one patch
     // target. Prefer `web` (the primary surface).
     if paths.is_empty() {
@@ -338,7 +357,7 @@ pub fn install() -> Result<DshHookStatus, String> {
                 .map_err(|error| format!("创建 {} 失败：{error}", patch.display()))?;
         }
     }
-    let paths = patch_paths(&home);
+    let paths = patch_paths(home);
     for path in &paths {
         let content = if path.is_file() {
             fs::read_to_string(path)
@@ -349,12 +368,15 @@ pub fn install() -> Result<DshHookStatus, String> {
         let updated = add_insert_block(&content)?;
         config::atomic_write(path, updated.as_bytes())?;
     }
-    status()
+    status_at(home)
 }
 
 pub fn uninstall() -> Result<DshHookStatus, String> {
-    let home = dsh_home()?;
-    for path in patch_paths(&home) {
+    uninstall_at(&dsh_home()?)
+}
+
+fn uninstall_at(home: &Path) -> Result<DshHookStatus, String> {
+    for path in patch_paths(home) {
         if path.is_file() {
             let content = fs::read_to_string(&path)
                 .map_err(|error| format!("读取 {} 失败：{error}", path.display()))?;
@@ -364,8 +386,8 @@ pub fn uninstall() -> Result<DshHookStatus, String> {
             }
         }
     }
-    remove_plugin_source(&home)?;
-    status()
+    remove_plugin_source(home)?;
+    status_at(home)
 }
 
 #[cfg(test)]
@@ -439,5 +461,103 @@ mod tests {
         assert!(updated.starts_with(content));
         assert!(updated.ends_with("enabled: true\n"));
         assert!(updated.contains(PATCH_MARKER));
+    }
+
+    #[test]
+    fn remove_stops_at_the_next_top_level_line_after_a_hand_edited_block() {
+        let content = "- insert:\n    - id: session-agent-cat\n      name: 'dsh-session-agent-cat'\n\n- disable:\n    id: some-plugin\n";
+        let updated = remove_insert_block(content);
+        assert_eq!(updated, "- disable:\n    id: some-plugin\n");
+    }
+
+    fn temp_home(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "agent-cat-dsh-{name}-{}-{nonce}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn install_status_and_uninstall_round_trip_through_a_temp_home() {
+        let home = temp_home("roundtrip");
+        let status = install_at(&home).unwrap();
+        assert!(status.installed);
+        assert!(status.plugin_source_exists);
+        let web_patch = home.join("profiles").join("web").join("cordis.patch.yml");
+        assert!(fs::read_to_string(&web_patch)
+            .unwrap()
+            .contains(PATCH_MARKER));
+
+        let status = uninstall_at(&home).unwrap();
+        assert!(!status.installed);
+        assert!(!status.plugin_source_exists);
+        assert!(!node_modules_dir(&home).join(PLUGIN_NAME).exists());
+        let restored = fs::read_to_string(web_patch).unwrap();
+        assert!(!restored.contains(PATCH_MARKER));
+        assert!(restored.contains("[]"));
+
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn existing_home_patch_is_the_only_patch_target() {
+        let home = temp_home("home-patch");
+        fs::create_dir_all(home.join("profiles").join("web")).unwrap();
+        fs::write(home.join("cordis.patch.yml"), "# user\n[]\n").unwrap();
+
+        let status = install_at(&home).unwrap();
+        assert!(status.installed);
+        assert!(fs::read_to_string(home.join("cordis.patch.yml"))
+            .unwrap()
+            .contains(PATCH_MARKER));
+        assert!(!home
+            .join("profiles")
+            .join("web")
+            .join("cordis.patch.yml")
+            .exists());
+
+        let status = uninstall_at(&home).unwrap();
+        assert!(!status.installed);
+        assert_eq!(
+            fs::read_to_string(home.join("cordis.patch.yml")).unwrap(),
+            "# user\n[]\n"
+        );
+
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn without_a_home_patch_every_profile_must_be_installed() {
+        let home = temp_home("profiles");
+        for name in ["web", "headless"] {
+            fs::create_dir_all(home.join("profiles").join(name)).unwrap();
+        }
+
+        let status = install_at(&home).unwrap();
+        assert!(status.installed);
+        for name in ["web", "headless"] {
+            let patch = home.join("profiles").join(name).join("cordis.patch.yml");
+            assert!(fs::read_to_string(&patch).unwrap().contains(PATCH_MARKER));
+        }
+
+        let web_patch = home.join("profiles").join("web").join("cordis.patch.yml");
+        let updated = remove_insert_block(&fs::read_to_string(&web_patch).unwrap());
+        fs::write(web_patch, updated).unwrap();
+        let status = status_at(&home).unwrap();
+        assert!(!status.installed);
+        assert!(status.message.contains("部分补丁层"));
+
+        let status = uninstall_at(&home).unwrap();
+        assert!(!status.installed);
+        for name in ["web", "headless"] {
+            let patch = home.join("profiles").join(name).join("cordis.patch.yml");
+            assert!(!fs::read_to_string(patch).unwrap().contains(PATCH_MARKER));
+        }
+
+        fs::remove_dir_all(&home).unwrap();
     }
 }

@@ -1020,11 +1020,13 @@ document.querySelector("#test-dsh-hook")!.addEventListener("click", async () => 
 });
 document.querySelector("#connect-dsh")!.addEventListener("click", async (event) => {
   const button = event.currentTarget as HTMLButtonElement;
+  const currentConfig = integrationConfig("dsh");
+  const previousHooksEnabled = currentConfig.hooksEnabled;
+  const previousShowLiveStatus = currentConfig.showLiveStatus;
   button.disabled = true;
   button.textContent = t("Connecting…");
   try {
     await invoke<DshHookStatus>("install_dsh_hooks");
-    const currentConfig = integrationConfig("dsh");
     currentConfig.hooksEnabled = true;
     currentConfig.showLiveStatus = true;
     bindConfig();
@@ -1033,6 +1035,10 @@ document.querySelector("#connect-dsh")!.addEventListener("click", async (event) 
     await refreshHookStatus("dsh");
     showMessage(t("The DeepSeek Harness plugin was installed and the local test passed. Restart DeepSeek Harness to load the plugin, then start a task to verify."));
   } catch (error) {
+    // Keep the in-memory config consistent with disk if persistence failed.
+    currentConfig.hooksEnabled = previousHooksEnabled;
+    currentConfig.showLiveStatus = previousShowLiveStatus;
+    bindConfig();
     await refreshHookStatus("dsh");
     showMessage(String(error), true);
   } finally {
@@ -1040,7 +1046,9 @@ document.querySelector("#connect-dsh")!.addEventListener("click", async (event) 
     button.textContent = t("Connect and Test");
   }
 });
-document.querySelector("#uninstall-dsh-hook")!.addEventListener("click", async () => {
+document.querySelector("#uninstall-dsh-hook")!.addEventListener("click", async (event) => {
+  const button = event.currentTarget as HTMLButtonElement;
+  button.disabled = true;
   try {
     await invoke<DshHookStatus>("uninstall_dsh_hooks");
     integrationConfig("dsh").hooksEnabled = false;
@@ -1048,7 +1056,12 @@ document.querySelector("#uninstall-dsh-hook")!.addEventListener("click", async (
     await persist();
     await refreshHookStatus("dsh");
     showMessage(t("The DeepSeek Harness plugin was uninstalled"));
-  } catch (error) { showMessage(String(error), true); }
+  } catch (error) {
+    await refreshHookStatus("dsh");
+    showMessage(String(error), true);
+  } finally {
+    button.disabled = false;
+  }
 });
 document.querySelector("#open-debug")!.addEventListener("click", () => void invoke("show_window", { kind: "pet-debug" }));
 renderAgentSettingsNavigation();

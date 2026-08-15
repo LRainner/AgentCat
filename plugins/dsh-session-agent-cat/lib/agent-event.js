@@ -41,7 +41,7 @@ function firstPromptLine(content) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("```")) continue;
-    const value = trimmed.replace(/^[\s#>*-]+/, "").trim();
+    const value = trimmed.replace(/^(?:(?:#{1,6}|[>*`-])\s+)+/, "").trim();
     if (!value) continue;
     return sanitizeText(value, MAX_TITLE_CHARS);
   }

@@ -60,18 +60,29 @@ describe("mapSessionEvent", () => {
     expect(mapped.title).toBe("123 Fix the live status");
   });
 
-  it("strips markdown bullet markers without eating the next character", () => {
+  it("strips markdown bullet markers only when followed by whitespace", () => {
     for (const [text, expected] of [
       ["* Bullet point", "Bullet point"],
       ["- Item", "Item"],
       ["# Header", "Header"],
       ["> Quote", "Quote"],
+      ["- ## Nested markers", "Nested markers"],
     ]) {
       const mapped = mapSessionEvent(
         session(),
         event("user/message", { source: { kind: "user" }, content: [{ type: "text", text }] }),
       );
       expect(mapped.title).toBe(expected);
+    }
+  });
+
+  it("preserves non-Markdown prefixes such as #include and -dry-run", () => {
+    for (const text of ["#include <stdio.h>", "-dry-run", "*-literal"]) {
+      const mapped = mapSessionEvent(
+        session(),
+        event("user/message", { source: { kind: "user" }, content: [{ type: "text", text }] }),
+      );
+      expect(mapped.title).toBe(text);
     }
   });
 

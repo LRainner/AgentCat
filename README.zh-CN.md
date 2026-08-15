@@ -130,9 +130,9 @@ npm run tauri -- build
 ```text
 assets/       原创应用图标和菜单栏图标
 docs/         为 README 自动生成的项目截图
-plugins/      Agent 集成插件（如 dsh-session-agent-cat）
 e2e/          浏览器测试和固定截图生成器
 fixtures/     自动化测试使用的固定宠物样本
+plugins/      Agent 集成插件（如 dsh-session-agent-cat）
 src/          HTML、TypeScript、CSS 和前端测试
 src-tauri/    Rust 后端、Tauri 配置和各平台图标
 ```
