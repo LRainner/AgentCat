@@ -1,6 +1,7 @@
 import type { AppConfig } from "../types";
 import { codexAdapter } from "./codex";
 import { claudeCodeAdapter } from "./claude-code";
+import { dshAdapter } from "./dsh";
 import type { AgentAdapter, AgentEvent, RawAgentEvent } from "./types";
 
 export class AgentAdapterRegistry {
@@ -44,7 +45,7 @@ export class AgentAdapterRegistry {
   }
 }
 
-const registry = new AgentAdapterRegistry([codexAdapter, claudeCodeAdapter]);
+const registry = new AgentAdapterRegistry([codexAdapter, claudeCodeAdapter, dshAdapter]);
 
 export const registerAgentAdapter = (adapter: AgentAdapter): void => registry.register(adapter);
 export const normalizeAgentEvent = (event: RawAgentEvent): AgentEvent | null => registry.normalize(event);

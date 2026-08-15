@@ -1,6 +1,7 @@
 mod agent_events;
 mod codex_source;
 mod config;
+mod dsh_profile;
 mod hook_installer;
 mod hook_server;
 mod hook_verification;
@@ -319,6 +320,7 @@ fn sync_status_window_with_config(
 fn has_live_status_source(value: &AppConfig) -> bool {
     (value.codex.hooks_enabled && value.codex.show_live_status)
         || (value.claude_code.hooks_enabled && value.claude_code.show_live_status)
+        || (value.dsh.hooks_enabled && value.dsh.show_live_status)
 }
 
 fn sync_tray_menu(app: &tauri::AppHandle, value: &WindowConfig) {
@@ -599,6 +601,27 @@ fn probe_hook(agent: String) -> Result<hook_server::HookRuntimeStatus, String> {
     hook_server::probe_hook(&agent)
 }
 
+#[tauri::command]
+fn dsh_hook_status() -> Result<dsh_profile::DshHookStatus, String> {
+    dsh_profile::status()
+}
+
+#[tauri::command]
+fn install_dsh_hooks() -> Result<dsh_profile::DshHookStatus, String> {
+    let status = dsh_profile::install()?;
+    // Resetting verification makes the UI wait for a fresh real event after
+    // (re)install instead of restoring a stale "connected" timestamp.
+    hook_verification::clear(hook_installer::DSH)?;
+    Ok(status)
+}
+
+#[tauri::command]
+fn uninstall_dsh_hooks() -> Result<dsh_profile::DshHookStatus, String> {
+    let status = dsh_profile::uninstall()?;
+    hook_verification::clear(hook_installer::DSH)?;
+    Ok(status)
+}
+
 fn show_aux_window(app: &tauri::AppHandle, kind: &str) -> Result<(), String> {
     let (label, url, title, width, height) = match kind {
         "settings" => (
@@ -814,7 +837,10 @@ pub fn run() {
             send_test_event,
             get_live_event,
             hook_runtime_status,
-            probe_hook
+            probe_hook,
+            dsh_hook_status,
+            install_dsh_hooks,
+            uninstall_dsh_hooks
         ])
         .setup(|app| {
             if !hook_server::start(app.handle().clone()).map_err(std::io::Error::other)? {
@@ -887,16 +913,19 @@ mod tests {
     }
 
     #[test]
-    fn live_status_source_supports_every_codex_and_claude_configuration() {
-        for mask in 0_u8..16 {
+    fn live_status_source_supports_every_codex_claude_and_dsh_configuration() {
+        for mask in 0_u8..64 {
             let mut config = AppConfig::default();
             config.codex.hooks_enabled = mask & 1 != 0;
             config.codex.show_live_status = mask & 2 != 0;
             config.claude_code.hooks_enabled = mask & 4 != 0;
             config.claude_code.show_live_status = mask & 8 != 0;
+            config.dsh.hooks_enabled = mask & 16 != 0;
+            config.dsh.show_live_status = mask & 32 != 0;
             let expected = (config.codex.hooks_enabled && config.codex.show_live_status)
-                || (config.claude_code.hooks_enabled && config.claude_code.show_live_status);
-            assert_eq!(has_live_status_source(&config), expected, "mask={mask:04b}");
+                || (config.claude_code.hooks_enabled && config.claude_code.show_live_status)
+                || (config.dsh.hooks_enabled && config.dsh.show_live_status);
+            assert_eq!(has_live_status_source(&config), expected, "mask={mask:06b}");
         }
     }
 }

@@ -29,6 +29,7 @@ export type AppConfig = {
   behavior: { followPointer: boolean; pointerRadius: number; pointerDeadzone: number; clickToWave: boolean; doubleClickToJump: boolean };
   codex: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean; bubbleScale: number; bubbleOpacity: number };
   claudeCode: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean };
+  dsh: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean };
 };
 
 export type { AgentEvent, RawAgentEvent } from "./agents/types";

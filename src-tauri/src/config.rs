@@ -26,6 +26,8 @@ pub struct AppConfig {
     pub codex: CodexConfig,
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
+    #[serde(default)]
+    pub dsh: DshConfig,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,6 +114,27 @@ impl Default for ClaudeCodeConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DshConfig {
+    #[serde(default)]
+    pub hooks_enabled: bool,
+    #[serde(default = "default_true")]
+    pub show_live_status: bool,
+    #[serde(default = "default_true")]
+    pub show_task_summary: bool,
+}
+
+impl Default for DshConfig {
+    fn default() -> Self {
+        Self {
+            hooks_enabled: false,
+            show_live_status: true,
+            show_task_summary: true,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -159,6 +182,7 @@ impl Default for AppConfig {
                 bubble_opacity: 0.92,
             },
             claude_code: ClaudeCodeConfig::default(),
+            dsh: DshConfig::default(),
         }
     }
 }
@@ -340,6 +364,9 @@ mod tests {
         })).unwrap();
         assert!(!app.claude_code.hooks_enabled);
         assert!(app.claude_code.show_live_status);
+        assert!(!app.dsh.hooks_enabled);
+        assert!(app.dsh.show_live_status);
+        assert!(app.dsh.show_task_summary);
         assert_eq!(app.language, LanguagePreference::System);
     }
 

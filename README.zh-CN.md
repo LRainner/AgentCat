@@ -12,7 +12,7 @@
   <a href="README.md">English</a> · 简体中文
 </p>
 
-Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前已实现 macOS 和 Windows 上的 Codex 与 Claude Code 集成。
+Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变得直观而有趣。项目目标是不局限于某个 Agent 或操作系统；目前已实现 macOS 和 Windows 上的 Codex、Claude Code 与 DeepSeek Harness 集成。
 
 <p align="center">
   <a href="docs/images/agent-cat-overview.png">
@@ -20,7 +20,7 @@ Agent Cat 用动画桌面宠物和实时状态，让 AI Agent 的工作过程变
   </a>
 </p>
 
-> **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统和 Windows 10 及以上系统，并已集成 Codex 与 Claude Code；更多 Agent 和操作系统仍在规划中。
+> **当前状态：** Agent Cat 正在积极开发中。当前版本支持 macOS 12 及以上系统和 Windows 10 及以上系统，并已集成 Codex、Claude Code 与 DeepSeek Harness；更多 Agent 和操作系统仍在规划中。
 
 ## 下载
 
@@ -52,6 +52,10 @@ Agent Cat 通过 command Hook 响应 Codex 会话。你可以在设置窗口中�
 ### Claude Code
 
 Agent Cat 会将 command Hook 安装到 `~/.claude/settings.json`，并保留用户已有的 Claude Code 设置和其他 Hook。当前观察 13 个与宠物状态有关的事件，覆盖会话、用户提示、工具执行与失败、子 Agent、上下文压缩、权限请求、任务完成和 API 错误。Claude Code 与 Codex 的安装、测试、暂停、修复和卸载互不影响。
+
+### DeepSeek Harness
+
+Agent Cat 通过内嵌插件 [`dsh-session-agent-cat`](plugins/dsh-session-agent-cat/README.zh-CN.md)（设置 → 智能体 → DeepSeek Harness → 连接）响应 DeepSeek Harness。插件只在本地转发脱敏后的生命周期元数据 —— 工具参数、文件内容和终端输出不会离开 harness 进程。首次安装或更新后请重启 DeepSeek Harness；详见插件 [中文说明](plugins/dsh-session-agent-cat/README.zh-CN.md)。
 
 ## 宠物包
 
@@ -126,6 +130,7 @@ npm run tauri -- build
 ```text
 assets/       原创应用图标和菜单栏图标
 docs/         为 README 自动生成的项目截图
+plugins/      Agent 集成插件（如 dsh-session-agent-cat）
 e2e/          浏览器测试和固定截图生成器
 fixtures/     自动化测试使用的固定宠物样本
 src/          HTML、TypeScript、CSS 和前端测试
@@ -134,7 +139,7 @@ src-tauri/    Rust 后端、Tauri 配置和各平台图标
 
 ## 隐私
 
-Agent Cat 在本地处理 Codex 与 Claude Code 事件。Hook 辅助进程从载荷中提取生命周期标识、Hook 事件名称和经过清理的工具名称，通过 macOS 本地 Unix Domain Socket 或 Windows 回环连接发送后立即退出。仅对 Codex，为识别 Esc 中断还会接收当前 transcript 路径，只在任务执行期间读取新增记录，并在检查生命周期元数据后丢弃原始记录；Agent Cat 不观察 Claude Code transcript。
+Agent Cat 在本地处理 Codex、Claude Code 与 DeepSeek Harness 事件。Hook 辅助进程从载荷中提取生命周期标识、Hook 事件名称和经过清理的工具名称，通过 macOS 本地 Unix Domain Socket 或 Windows 回环连接发送后立即退出。仅对 Codex，为识别 Esc 中断还会接收当前 transcript 路径，只在任务执行期间读取新增记录，并在检查生命周期元数据后丢弃原始记录；Agent Cat 不观察 Claude Code transcript，DeepSeek Harness 插件同样只转发经过脱敏的生命周期元数据。
 
 开启任务摘要后，Agent Cat 只在内存中保留用户提示的首个非空行，最多 80 个字符，用于实时展示。摘要不会写入配置、日志或历史记录。
 

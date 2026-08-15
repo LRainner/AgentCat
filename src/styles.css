@@ -63,9 +63,11 @@ button.compact { padding: 6px 10px; font-size: 12px; }
 .status-card.is-leaving .status-card-surface { animation: status-card-out 180ms cubic-bezier(.4, 0, 1, 1) both; }
 .status-copy { min-width: 0; flex: 1; }
 .status-title, .status-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-title { font-size: 16px; line-height: 1.25; font-weight: 720; letter-spacing: -.015em; }
+/* Keep line boxes tall enough for descenders (g/j/p/y): 1.2em clips them below
+   the content box because Segoe UI/Inter ascender+descender exceed 1.2em. */
+.status-title { font-size: 16px; line-height: 1.3; font-weight: 720; letter-spacing: -.015em; }
 .status-meta-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-top: 4px; }
-.status-detail { min-width: 0; flex: 1; color: #697174; font-size: 13px; line-height: 1.2; font-weight: 480; }
+.status-detail { min-width: 0; flex: 1; color: #697174; font-size: 13px; line-height: 1.35; font-weight: 480; }
 .status-source { flex: 0 0 auto; color: #8a9293; font-size: 10px; line-height: 1.2; font-weight: 650; letter-spacing: .01em; white-space: nowrap; }
 .status-dismiss {
   position: absolute;

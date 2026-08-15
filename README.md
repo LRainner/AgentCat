@@ -12,7 +12,7 @@
   English · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex and Claude Code integrations on macOS and Windows.
+Agent Cat brings AI agent activity to life through animated desktop pets and real-time status updates. It is designed as an agent- and platform-independent companion, with Codex, Claude Code, and DeepSeek Harness integrations on macOS and Windows.
 
 <p align="center">
   <a href="docs/images/agent-cat-overview.png">
@@ -20,7 +20,7 @@ Agent Cat brings AI agent activity to life through animated desktop pets and rea
   </a>
 </p>
 
-> **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and Windows 10 or later, and integrates with Codex and Claude Code. Support for more agents and operating systems is planned.
+> **Current status:** Agent Cat is under active development. The current version supports macOS 12 or later and Windows 10 or later, and integrates with Codex, Claude Code, and DeepSeek Harness. Support for more agents and operating systems is planned.
 
 ## Download
 
@@ -52,6 +52,10 @@ The integration currently recognizes session start/end, prompt, tool, subagent, 
 ### Claude Code
 
 Agent Cat installs command hooks into `~/.claude/settings.json` without replacing existing Claude Code settings or hooks. It observes 13 state-relevant events covering sessions, prompts, tools and tool failures, subagents, compaction, permission requests, turn completion and API failures. The integration can be installed, tested, paused, repaired, and removed independently from Codex.
+
+### DeepSeek Harness
+
+Agent Cat reacts to DeepSeek Harness through the bundled [`dsh-session-agent-cat`](plugins/dsh-session-agent-cat/README.md) plugin (Settings → Agents → DeepSeek Harness → Connect). It forwards only sanitized lifecycle metadata locally — tool arguments, file contents, and terminal output never leave the harness process. Restart DeepSeek Harness after the first install or an update; see the [plugin README](plugins/dsh-session-agent-cat/README.md) for details.
 
 ## Pet packs
 
@@ -126,6 +130,7 @@ To build only the Windows NSIS installer, run `npm run build:windows` on Windows
 ```text
 assets/       Original application and menu bar artwork
 docs/         Product screenshots generated for the README
+plugins/      Agent integration plugins (e.g. dsh-session-agent-cat)
 e2e/          Browser tests and the deterministic screenshot generator
 fixtures/     Deterministic pet packs used by automated tests
 src/          HTML, TypeScript, CSS, and frontend tests
@@ -134,7 +139,7 @@ src-tauri/    Rust backend, Tauri configuration, and platform icons
 
 ## Privacy
 
-Agent Cat processes Codex and Claude Code events locally. Its hook helper extracts lifecycle identifiers, the hook event name, and a sanitized tool name, sends them through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately. For Codex only, it also receives the active transcript path to detect Esc interruptions, reads only newly appended records while a task is active, and discards raw records after checking their lifecycle metadata. Claude Code transcripts are not observed.
+Agent Cat processes Codex, Claude Code, and DeepSeek Harness events locally. Its hook helper extracts lifecycle identifiers, the hook event name, and a sanitized tool name, sends them through a local Unix domain socket on macOS or a loopback-only TCP connection on Windows, and exits immediately. For Codex only, it also receives the active transcript path to detect Esc interruptions, reads only newly appended records while a task is active, and discards raw records after checking their lifecycle metadata. Claude Code transcripts are not observed, and the DeepSeek Harness plugin likewise forwards only sanitized lifecycle metadata.
 
 When task summaries are enabled, Agent Cat keeps at most the first non-empty prompt line, truncated to 80 characters, in memory for live display. It does not store the summary in its configuration, logs, or history.
 
