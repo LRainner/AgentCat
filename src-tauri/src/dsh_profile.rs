@@ -366,16 +366,18 @@ fn status_at(home: &Path) -> Result<DshHookStatus, String> {
     let has_residual_markers = all_patch_paths(home)
         .iter()
         .any(|path| !paths.contains(path) && patch_contains_marker(path));
-    let has_unreadable_layers = all_patch_paths(home)
-        .iter()
-        .any(|path| patch_is_unreadable(path));
+    // Only unreadable ACTIVE layers block the status: they are files Agent Cat
+    // must read to keep its own patch in shape. Unreadable non-active layers may
+    // belong to the user or other tools, and Connect cannot (and should not)
+    // rewrite them, so they must not make a healthy install report as broken.
+    let has_unreadable_active = paths.iter().any(|path| patch_is_unreadable(path));
     let plugin_root = node_modules_dir(home).join(PLUGIN_NAME);
     let plugin_source_exists = PLUGIN_FILES
         .iter()
         .all(|(relative, _)| plugin_root.join(relative).is_file());
     let installed =
-        patch_installed && plugin_source_exists && !has_residual_markers && !has_unreadable_layers;
-    let message = if has_unreadable_layers {
+        patch_installed && plugin_source_exists && !has_residual_markers && !has_unreadable_active;
+    let message = if has_unreadable_active {
         "部分补丁层无法读取，请检查权限后重新连接".to_string()
     } else if has_residual_markers {
         "检测到其他补丁层存在残留安装，请重新连接以修复".to_string()
@@ -695,7 +697,7 @@ mod tests {
 
         let status = uninstall_at(&home).unwrap();
         assert!(!status.installed);
-        assert!(status.message.contains("无法读取"));
+        assert!(!status.message.contains("无法读取"));
         assert!(!node_modules_dir(&home).join(PLUGIN_NAME).exists());
         assert_eq!(
             fs::read_to_string(home.join("cordis.patch.yml")).unwrap(),
@@ -717,8 +719,8 @@ mod tests {
         fs::write(&web_patch, [0xFF, 0xFE, 0x00, 0x01]).unwrap();
 
         let status = install_at(&home).unwrap();
-        assert!(!status.installed);
-        assert!(status.message.contains("无法读取"));
+        assert!(status.installed);
+        assert!(status.message.contains("已安装"));
         assert!(fs::read_to_string(home.join("cordis.patch.yml"))
             .unwrap()
             .contains(PATCH_MARKER));
