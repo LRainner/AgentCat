@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/LRainner/AgentCat/compare/v1.9.0...v1.9.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **dsh:** mark standalone context compaction as manual ([#48](https://github.com/LRainner/AgentCat/issues/48)) ([c548f62](https://github.com/LRainner/AgentCat/commit/c548f62f6b8818b788ec4261ea6b2de3014b96c9))
+
 ## [1.9.0](https://github.com/LRainner/AgentCat/compare/v1.8.0...v1.9.0) (2026-08-15)
 
 
