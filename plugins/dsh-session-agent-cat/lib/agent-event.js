@@ -54,6 +54,13 @@ function isToolResultError(data) {
   return Array.isArray(message?.content) && message.content.some((block) => block?.isError === true);
 }
 
+function compactionTrigger(data) {
+  // `compaction/*.data.turn` carries the owner: a number for automatic
+  // in-turn compaction, null for a standalone compaction (e.g. the `compact`
+  // command). Standalone compactions must not leave the pet "running".
+  return typeof data?.turn === "number" ? "auto" : "manual";
+}
+
 /**
  * Map one DSH session event to an Agent Cat `AgentEvent`, or null when the
  * event does not map to a state the pet should react to.
@@ -144,12 +151,14 @@ export function mapSessionEvent(session, event, toolNames) {
 
     case "compaction/start": {
       // Context compaction begins; surface as Agent Cat's "compacting" state.
-      return { ...base, event: "PreCompact" };
+      return { ...base, event: "PreCompact", compactTrigger: compactionTrigger(event.data) };
     }
 
     case "compaction/end": {
-      // Context compaction finished; resume work.
-      return { ...base, event: "PostCompact" };
+      // Context compaction finished. Standalone compactions (`turn: null`,
+      // e.g. the `compact` command) finish outside a turn, so Agent Cat
+      // returns to idle; in-turn automatic compactions keep the task running.
+      return { ...base, event: "PostCompact", compactTrigger: compactionTrigger(event.data) };
     }
 
     default:
