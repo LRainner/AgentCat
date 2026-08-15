@@ -116,6 +116,36 @@
         <p class="privacy-note" data-i18n="Task summaries use only the first non-empty line of the user prompt, up to 80 characters. They are held in memory for live display and are never written to Agent Cat configuration or history. Tool arguments, file contents, and terminal output are never read or displayed.">任务摘要只截取用户提示的首个有效行，最多 80 个字符；仅在内存中用于实时显示，不写入 Agent Cat 配置或历史记录。工具参数、文件内容和终端输出不会被读取或显示。</p>
       </section>
       </div>
+      <div id="agent-settings-dsh" class="agent-settings-panel" data-agent-panel="dsh" role="tabpanel" hidden>
+      <section><div class="agent-detail-heading"><h2 data-i18n="DeepSeek Harness Connection">DeepSeek Harness 连接</h2><label class="agent-link-toggle"><span data-i18n="Status integration">状态联动</span><input id="dsh-link" type="checkbox" disabled /><span class="agent-link-toggle-track" aria-hidden="true"></span></label></div>
+        <div id="dsh-integration" class="integration-card" data-state="checking">
+          <div class="integration-heading">
+            <span class="integration-dot" aria-hidden="true"></span>
+            <div class="integration-copy">
+              <strong id="dsh-integration-title" data-i18n="Checking the DeepSeek Harness connection…">正在检查 DeepSeek Harness 连接…</strong>
+              <p id="dsh-integration-detail" data-i18n="Agent Cat is checking the local status receiver.">Agent Cat 正在检查本地状态接收器。</p>
+            </div>
+            <span id="dsh-integration-badge" class="integration-badge" data-i18n="Checking">检查中</span>
+          </div>
+          <div class="integration-meta">
+            <span><small data-i18n="Plugin">插件</small><strong id="dsh-hook-status" data-i18n="Checking">检查中</strong></span>
+            <span><small data-i18n="Status receiver">状态接收器</small><strong id="dsh-receiver-status" data-i18n="Checking">检查中</strong></span>
+            <span><small data-i18n="Last event">最后事件</small><strong id="dsh-last-event-status" data-i18n="None">暂无</strong></span>
+          </div>
+          <div class="button-row">
+            <button id="connect-dsh" data-i18n="Connect and Test">一键连接并测试</button>
+            <button id="uninstall-dsh-hook" class="danger" data-i18n="Uninstall">卸载</button>
+            <button id="test-dsh-hook" class="secondary" data-i18n="Test Again">重新测试</button>
+          </div>
+        </div>
+        <h3 class="agent-display-heading" data-i18n="Display options">显示选项</h3>
+        <div class="settings-grid">
+          <label data-i18n="Show live status next to the pet"><input id="dsh-show-live-status" type="checkbox" /> 在宠物旁显示实时状态</label>
+          <label data-i18n="Show task summaries"><input id="dsh-show-task-summary" type="checkbox" /> 显示任务摘要</label>
+        </div>
+        <p class="privacy-note" data-i18n="Clicking Connect installs the dsh-session-agent-cat plugin into your DeepSeek Harness deployment's user patch layer. Agent Cat only receives sanitized lifecycle metadata and never reads tool arguments, file contents, or terminal output.">点击「连接」会把 dsh-session-agent-cat 插件安装到你的 DeepSeek Harness 部署的用户补丁层。Agent Cat 仅接收脱敏后的生命周期元数据，不会读取工具参数、文件内容或终端输出。</p>
+      </section>
+      </div>
       </div>
       </div>
       </div>
@@ -136,7 +166,7 @@
             <div class="update-status-actions"><button id="check-update" data-i18n="Check for Updates">检查更新</button><button id="install-update" data-i18n="Install and Restart" hidden>安装并重启</button></div>
           </div>
         </section>
-        <section><h2 data-i18n="Project">项目</h2><p class="about-copy" data-i18n="Agent Cat is an open-source desktop companion. Update checks never upload configuration, prompts, file contents, or usage history.">Agent Cat 是一个开源桌面伴侣。更新检查不会上传配置、提示词、文件内容或使用记录。</p><div class="about-meta"><span><small data-i18n="Supported platforms">支持平台</small><strong>macOS · Windows</strong></span><span><small data-i18n="Current integrations">当前集成</small><strong>OpenAI Codex · Claude Code</strong></span></div></section>
+        <section><h2 data-i18n="Project">项目</h2><p class="about-copy" data-i18n="Agent Cat is an open-source desktop companion. Update checks never upload configuration, prompts, file contents, or usage history.">Agent Cat 是一个开源桌面伴侣。更新检查不会上传配置、提示词、文件内容或使用记录。</p><div class="about-meta"><span><small data-i18n="Supported platforms">支持平台</small><strong>macOS · Windows</strong></span><span><small data-i18n="Current integrations">当前集成</small><strong>OpenAI Codex · Claude Code · DeepSeek Harness</strong></span></div></section>
       </div>
       <div id="settings-message" role="status"></div>
       </div>

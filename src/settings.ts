@@ -31,10 +31,11 @@ import {
 
 type HookStatus = { path: string; exists: boolean; valid: boolean; globallyDisabled: boolean; installedEvents: number; expectedEvents: number; message: string };
 type HookRuntimeStatus = { receiverRunning: boolean; socketPath: string; verifiedAt: number | null; lastRealEventAt: number | null; lastRealEvent: string | null };
+type DshHookStatus = { harnessHome: string; patchPath: string; patchExists: boolean; pluginSourceExists: boolean; installed: boolean; message: string };
 type PetDirectoryInfo = { defaultPath: string; examplePath: string };
 type SettingsPage = "general" | "agents" | "about";
-type IntegrationId = "codex" | "claude-code";
-type IntegrationConfigKey = "codex" | "claudeCode";
+type IntegrationId = "codex" | "claude-code" | "dsh";
+type IntegrationConfigKey = "codex" | "claudeCode" | "dsh";
 type UpdatePresentation =
   | { phase: "idle" }
   | { phase: "available"; version: string }
@@ -46,7 +47,7 @@ type UpdatePresentation =
   | { phase: "installing"; version: string }
   | { phase: "install-error"; error: string; installed: boolean };
 
-const integrationIds = ["codex", "claude-code"] as const satisfies readonly IntegrationId[];
+const integrationIds = ["codex", "claude-code", "dsh"] as const satisfies readonly IntegrationId[];
 const agentSettingsStorageKey = "agent-cat-settings-agent";
 
 const integrationDefinitions: Record<IntegrationId, {
@@ -75,6 +76,12 @@ const integrationDefinitions: Record<IntegrationId, {
     linkId: "claude-code-link", liveStatusId: "claude-code-show-live-status", taskSummaryId: "claude-code-show-task-summary",
     hookStatusId: "claude-code-hook-status", receiverStatusId: "claude-code-receiver-status", lastEventStatusId: "claude-code-last-event-status",
     connectId: "connect-claude-code", installId: "install-claude-code-hook", uninstallId: "uninstall-claude-code-hook", testId: "test-claude-code-hook",
+  },
+  dsh: {
+    configKey: "dsh", prefix: "dsh", iconUrl: new URL("../assets/agent-icons/dsh.svg", import.meta.url).href,
+    linkId: "dsh-link", liveStatusId: "dsh-show-live-status", taskSummaryId: "dsh-show-task-summary",
+    hookStatusId: "dsh-hook-status", receiverStatusId: "dsh-receiver-status", lastEventStatusId: "dsh-last-event-status",
+    connectId: "connect-dsh", installId: "", uninstallId: "uninstall-dsh-hook", testId: "test-dsh-hook",
   },
 };
 
@@ -110,7 +117,8 @@ for (const image of document.querySelectorAll<HTMLImageElement>(".settings-brand
 let config: AppConfig;
 let catalog: CatalogResult;
 let persistQueue: Promise<void> = Promise.resolve();
-const hookRefreshRequests: Record<IntegrationId, number> = { codex: 0, "claude-code": 0 };
+const hookRefreshRequests: Record<IntegrationId, number> = { codex: 0, "claude-code": 0, dsh: 0 };
+const hookRefreshTimers: Partial<Record<IntegrationId, number>> = {};
 let persistTimer: number | null = null;
 let previewFrame: number | null = null;
 let pendingPreview: AppConfig | null = null;
@@ -210,7 +218,7 @@ async function initialize(): Promise<void> {
   refreshUpdateIndicator();
   if (activeSettingsPage === "about") renderKnownUpdate();
   bindConfig();
-  await Promise.all([refreshCatalog(), refreshHookStatus("codex"), refreshHookStatus("claude-code"), refreshAutostart()]);
+  await Promise.all([refreshCatalog(), refreshHookStatus("codex"), refreshHookStatus("claude-code"), refreshHookStatus("dsh"), refreshAutostart()]);
 }
 
 function applyLanguage(preference: LanguagePreference): void {
@@ -482,7 +490,7 @@ function bindConfig(): void {
   input("follow-pointer").checked = config.behavior.followPointer;
   input("click-wave").checked = config.behavior.clickToWave;
   input("double-jump").checked = config.behavior.doubleClickToJump;
-  for (const agent of ["codex", "claude-code"] as const) {
+  for (const agent of integrationIds) {
     const definition = integrationDefinitions[agent];
     const currentConfig = integrationConfig(agent);
     input(definition.linkId).checked = currentConfig.hooksEnabled;
@@ -612,6 +620,7 @@ async function petCard(pet: PetDescriptor): Promise<HTMLElement> {
 }
 
 async function refreshHookStatus(agent: IntegrationId): Promise<void> {
+  if (agent === "dsh") return refreshDshStatus();
   const request = ++hookRefreshRequests[agent];
   const definition = integrationDefinitions[agent];
   const displayName = agentDisplayName(agent);
@@ -700,6 +709,90 @@ async function refreshHookStatus(agent: IntegrationId): Promise<void> {
   }
 }
 
+async function refreshDshStatus(): Promise<void> {
+  const agent: IntegrationId = "dsh";
+  const request = ++hookRefreshRequests[agent];
+  const definition = integrationDefinitions[agent];
+  const displayName = agentDisplayName(agent);
+  const card = document.querySelector<HTMLElement>(`#${definition.prefix}-integration`)!;
+  const title = document.querySelector<HTMLElement>(`#${definition.prefix}-integration-title`)!;
+  const detail = document.querySelector<HTMLElement>(`#${definition.prefix}-integration-detail`)!;
+  const badge = document.querySelector<HTMLElement>(`#${definition.prefix}-integration-badge`)!;
+  const hookElement = document.querySelector<HTMLElement>(`#${definition.hookStatusId}`)!;
+  const receiverElement = document.querySelector<HTMLElement>(`#${definition.receiverStatusId}`)!;
+  const eventElement = document.querySelector<HTMLElement>(`#${definition.lastEventStatusId}`)!;
+  const linkToggle = input(definition.linkId);
+  const linkControl = linkToggle.closest<HTMLElement>(".agent-link-toggle")!;
+  const testButton = document.querySelector<HTMLButtonElement>("#test-dsh-hook")!;
+  detail.hidden = false;
+  try {
+    const [status, runtime] = await Promise.all([
+      invoke<DshHookStatus>("dsh_hook_status"),
+      invoke<HookRuntimeStatus>("hook_runtime_status", { agent }),
+    ]);
+    if (request !== hookRefreshRequests[agent]) return;
+    linkToggle.disabled = !status.installed;
+    testButton.disabled = !status.installed;
+    linkControl.title = status.installed
+      ? t("Enable or pause {agent} status integration", { agent: displayName })
+      : t("Connect {agent} first", { agent: displayName });
+    hookElement.textContent = status.installed ? t("Installed") : t("Not installed");
+    hookElement.title = `${status.message} · ${status.patchPath}`;
+    hookElement.className = status.installed ? "status-ok" : "status-error";
+    receiverElement.textContent = runtime.receiverRunning ? t("Running") : t("Not running");
+    receiverElement.title = runtime.socketPath;
+    receiverElement.className = runtime.receiverRunning ? "status-ok" : "status-error";
+    eventElement.textContent = runtime.lastRealEventAt
+      ? `${eventLabels[runtime.lastRealEvent ?? ""] ? t(eventLabels[runtime.lastRealEvent ?? ""]) : runtime.lastRealEvent ?? t("Status event")} · ${relativeTime(runtime.lastRealEventAt)}`
+      : runtime.verifiedAt
+        ? t("No events received since launch")
+        : t("No events received");
+
+    if (!status.installed) {
+      card.dataset.state = "setup";
+      title.textContent = t("One more step to connect {agent}", { agent: displayName });
+      detail.textContent = t("Install the dsh-session-agent-cat plugin into your DeepSeek Harness deployment, then complete an end-to-end test through the local status receiver.");
+      badge.textContent = t("Not connected");
+    } else if (!integrationConfig(agent).hooksEnabled) {
+      card.dataset.state = "paused";
+      title.textContent = t("{agent} status integration is paused", { agent: displayName });
+      detail.textContent = t("The plugin is installed. Turn the Status integration switch above back on to resume.");
+      badge.textContent = t("Paused");
+    } else if (!runtime.receiverRunning) {
+      card.dataset.state = "error";
+      title.textContent = t("Status receiver is not running");
+      detail.textContent = t("The local status receiver is unavailable. Restart Agent Cat and test again.");
+      badge.textContent = t("Restart required");
+    } else if (runtime.verifiedAt) {
+      card.dataset.state = "connected";
+      title.textContent = t("{agent} status integration is working", { agent: displayName });
+      detail.textContent = "";
+      detail.hidden = true;
+      badge.textContent = t("Connected");
+    } else {
+      card.dataset.state = "pending";
+      title.textContent = t("Plugin installed, waiting for verification");
+      detail.textContent = t("Restart DeepSeek Harness to load the plugin, then start a task to verify a real event.");
+      badge.textContent = t("Waiting for verification");
+    }
+  } catch (error) {
+    if (request !== hookRefreshRequests[agent]) return;
+    card.dataset.state = "error";
+    title.textContent = t("Unable to check the {agent} connection", { agent: displayName });
+    detail.textContent = String(error);
+    badge.textContent = t("Check failed");
+    hookElement.textContent = t("Check failed");
+    hookElement.className = "status-error";
+    receiverElement.textContent = t("Unknown");
+    eventElement.textContent = t("Unknown");
+    linkToggle.disabled = true;
+    testButton.disabled = true;
+    linkControl.title = t("Temporarily unable to check {agent} status integration", { agent: displayName });
+  } finally {
+    if (request === hookRefreshRequests[agent]) syncAgentNavigationState(agent);
+  }
+}
+
 function relativeTime(timestamp: number): string {
   const elapsed = Math.max(0, Date.now() - timestamp);
   if (elapsed < 10_000) return t("Just now");
@@ -779,11 +872,11 @@ input("language").addEventListener("change", async (event) => {
   applyLanguage(config.language);
   showSettingsPage(activeSettingsPage, false);
   renderExtraDirectories();
-  await Promise.all([refreshCatalog(), refreshHookStatus("codex"), refreshHookStatus("claude-code")]);
+  await Promise.all([refreshCatalog(), refreshHookStatus("codex"), refreshHookStatus("claude-code"), refreshHookStatus("dsh")]);
   await persist();
 });
 
-for (const agent of ["codex", "claude-code"] as const) {
+for (const agent of integrationIds) {
   const definition = integrationDefinitions[agent];
   input(definition.linkId).addEventListener("change", async (event) => {
     integrationConfig(agent).hooksEnabled = (event.target as HTMLInputElement).checked;
@@ -911,6 +1004,78 @@ function bindIntegrationActions(agent: IntegrationId): void {
 
 bindIntegrationActions("codex");
 bindIntegrationActions("claude-code");
+document.querySelector("#test-dsh-hook")!.addEventListener("click", async () => {
+  try {
+    const status = await invoke<DshHookStatus>("dsh_hook_status");
+    if (!status.installed) {
+      throw new Error(t("Install the DeepSeek Harness plugin first, then run the test again."));
+    }
+    await invoke<HookRuntimeStatus>("probe_hook", { agent: "dsh" });
+    await refreshHookStatus("dsh");
+    showMessage(t("The local DeepSeek Harness plugin test passed. Verification status is unchanged."));
+  } catch (error) {
+    await refreshHookStatus("dsh");
+    showMessage(String(error), true);
+  }
+});
+document.querySelector("#connect-dsh")!.addEventListener("click", async (event) => {
+  const button = event.currentTarget as HTMLButtonElement;
+  const currentConfig = integrationConfig("dsh");
+  const previousHooksEnabled = currentConfig.hooksEnabled;
+  const previousShowLiveStatus = currentConfig.showLiveStatus;
+  let persisted = false;
+  button.disabled = true;
+  button.textContent = t("Connecting…");
+  try {
+    await invoke<DshHookStatus>("install_dsh_hooks");
+    currentConfig.hooksEnabled = true;
+    currentConfig.showLiveStatus = true;
+    bindConfig();
+    await persist();
+    persisted = true;
+    await invoke<HookRuntimeStatus>("probe_hook", { agent: "dsh" });
+    await refreshHookStatus("dsh");
+    showMessage(t("The DeepSeek Harness plugin was installed and the local test passed. Restart DeepSeek Harness to load the plugin, then start a task to verify."));
+  } catch (error) {
+    // Only roll back the in-memory config when it was not saved to disk.
+    // Failures after persist() (probe/refresh) must keep memory and disk in sync.
+    if (!persisted) {
+      currentConfig.hooksEnabled = previousHooksEnabled;
+      currentConfig.showLiveStatus = previousShowLiveStatus;
+      bindConfig();
+    }
+    await refreshHookStatus("dsh");
+    showMessage(String(error), true);
+  } finally {
+    button.disabled = false;
+    button.textContent = t("Connect and Test");
+  }
+});
+document.querySelector("#uninstall-dsh-hook")!.addEventListener("click", async (event) => {
+  const button = event.currentTarget as HTMLButtonElement;
+  const currentConfig = integrationConfig("dsh");
+  const previousHooksEnabled = currentConfig.hooksEnabled;
+  let persisted = false;
+  button.disabled = true;
+  try {
+    await invoke<DshHookStatus>("uninstall_dsh_hooks");
+    currentConfig.hooksEnabled = false;
+    bindConfig();
+    await persist();
+    persisted = true;
+    await refreshHookStatus("dsh");
+    showMessage(t("The DeepSeek Harness plugin was uninstalled"));
+  } catch (error) {
+    if (!persisted) {
+      currentConfig.hooksEnabled = previousHooksEnabled;
+      bindConfig();
+    }
+    await refreshHookStatus("dsh");
+    showMessage(String(error), true);
+  } finally {
+    button.disabled = false;
+  }
+});
 document.querySelector("#open-debug")!.addEventListener("click", () => void invoke("show_window", { kind: "pet-debug" }));
 renderAgentSettingsNavigation();
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-settings-page]")) {
@@ -927,7 +1092,16 @@ void listen<{ source?: string }>("agent-cat-config-changed", async ({ payload })
 });
 void listen("agent-cat-autostart-changed", () => void refreshAutostart());
 void listen<RawAgentEvent>(AGENT_EVENT_CHANNEL, ({ payload }) => {
-  if (payload.agent === "codex" || payload.agent === "claude-code") void refreshHookStatus(payload.agent);
+  if (!isIntegrationId(payload.agent)) return;
+  // Agents can emit bursts (DeepSeek Harness especially: one tool/call and
+  // tool/result per tool invocation), so coalesce UI refreshes per agent.
+  const agent = payload.agent;
+  const pending = hookRefreshTimers[agent];
+  if (pending !== undefined) window.clearTimeout(pending);
+  hookRefreshTimers[agent] = window.setTimeout(() => {
+    delete hookRefreshTimers[agent];
+    void refreshHookStatus(agent);
+  }, 250);
 });
 void listen<UpdateIndicatorState>(UPDATE_STATE_EVENT, ({ payload }) => {
   if (payload.checkedFromVersion !== currentVersion) return;
@@ -938,10 +1112,14 @@ void listen<UpdateIndicatorState>(UPDATE_STATE_EVENT, ({ payload }) => {
 const healthTimer = window.setInterval(() => {
   void refreshHookStatus("codex");
   void refreshHookStatus("claude-code");
+  void refreshHookStatus("dsh");
 }, 5_000);
 window.addEventListener("beforeunload", () => {
   window.clearInterval(healthTimer);
   if (persistTimer !== null) window.clearTimeout(persistTimer);
+  for (const timer of Object.values(hookRefreshTimers)) {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
   if (previewFrame !== null) window.cancelAnimationFrame(previewFrame);
   if (!updateInstalling) void closePendingUpdate();
 });

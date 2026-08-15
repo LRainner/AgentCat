@@ -245,7 +245,12 @@ fn incoming_agent_hint(bytes: &[u8]) -> Option<String> {
         .unwrap_or(&value)
         .get("agent")?
         .as_str()
-        .filter(|agent| matches!(*agent, hook_installer::CODEX | hook_installer::CLAUDE_CODE))
+        .filter(|agent| {
+            matches!(
+                *agent,
+                hook_installer::CODEX | hook_installer::CLAUDE_CODE | hook_installer::DSH
+            )
+        })
         .map(str::to_string)
 }
 
@@ -287,7 +292,10 @@ pub fn runtime_status(agent: &str) -> HookRuntimeStatus {
 }
 
 pub fn probe_hook(agent: &str) -> Result<HookRuntimeStatus, String> {
-    if !matches!(agent, hook_installer::CODEX | hook_installer::CLAUDE_CODE) {
+    if !matches!(
+        agent,
+        hook_installer::CODEX | hook_installer::CLAUDE_CODE | hook_installer::DSH
+    ) {
         return Err(format!("不支持的 Agent：{agent}"));
     }
     if !RECEIVER_RUNNING.load(Ordering::Acquire) {
@@ -444,7 +452,7 @@ fn validate_incoming_event(mut event: AgentEvent) -> Result<AgentEvent, String> 
     if event.version != 1
         || !matches!(
             event.agent.as_str(),
-            hook_installer::CODEX | hook_installer::CLAUDE_CODE
+            hook_installer::CODEX | hook_installer::CLAUDE_CODE | hook_installer::DSH
         )
     {
         return Err("unsupported event envelope".into());

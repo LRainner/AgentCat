@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../types";
 import { codexAdapter } from "./codex";
 import { claudeCodeAdapter } from "./claude-code";
+import { dshAdapter } from "./dsh";
 import { AgentAdapterRegistry } from "./registry";
 import type { AgentAdapter, RawAgentEvent } from "./types";
 
 const config = {
   codex: { hooksEnabled: true, showLiveStatus: true, showTaskSummary: true },
   claudeCode: { hooksEnabled: true, showLiveStatus: true, showTaskSummary: true },
+  dsh: { hooksEnabled: true, showLiveStatus: true, showTaskSummary: true },
 } as AppConfig;
 
 function raw(agent: string, event: string): RawAgentEvent {
@@ -58,6 +60,17 @@ describe("AgentAdapterRegistry", () => {
   it("accepts transcript-derived Claude Code interruptions", () => {
     const registry = new AgentAdapterRegistry([codexAdapter, claudeCodeAdapter]);
     expect(registry.normalize(raw("claude-code", "TurnInterrupted"))?.event).toBe("TurnInterrupted");
+  });
+
+  it("normalizes DeepSeek Harness events through the dsh adapter", () => {
+    const registry = new AgentAdapterRegistry([dshAdapter]);
+    expect(registry.normalize(raw("dsh", "SessionStart"))?.event).toBe("SessionStart");
+    expect(registry.normalize(raw("dsh", "PostToolUseFailure"))?.event).toBe("PostToolUseFailure");
+    expect(registry.normalize(raw("dsh", "StopFailure"))?.event).toBe("StopFailure");
+    expect(registry.normalize(raw("dsh", "TurnInterrupted"))?.event).toBe("TurnInterrupted");
+    expect(registry.normalize(raw("dsh", "UnknownEvent"))).toBeNull();
+    expect(registry.displayName("dsh")).toBe("DeepSeek Harness");
+    expect(registry.showsLiveStatus(config, "dsh")).toBe(true);
   });
 
   it("rejects duplicate adapter ids", () => {

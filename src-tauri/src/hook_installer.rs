@@ -36,8 +36,37 @@ const CLAUDE_CODE_EVENTS: [&str; 13] = [
     "SessionEnd",
 ];
 
+// DeepSeek Harness 由独立插件（dsh-session-agent-cat）在进程内直接向本地
+// socket 发送已映射的 AgentEvent。这里的白名单必须与插件实际产出的事件
+// 精确一致：
+//   turn/start         → SessionStart
+//   user/message       → UserPromptSubmit
+//   tool/call          → PreToolUse
+//   tool/result        → PostToolUse / PostToolUseFailure
+//   approval/asked     → PermissionRequest
+//   approval/decided   → PostToolUse
+//   compaction/start   → PreCompact
+//   compaction/end     → PostCompact
+//   turn/end           → Stop / StopFailure / TurnInterrupted
+//   session/disposed   → SessionEnd
+const DSH_EVENTS: [&str; 12] = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PermissionRequest",
+    "PreCompact",
+    "PostCompact",
+    "Stop",
+    "StopFailure",
+    "TurnInterrupted",
+    "SessionEnd",
+];
+
 pub const CODEX: &str = "codex";
 pub const CLAUDE_CODE: &str = "claude-code";
+pub const DSH: &str = "dsh";
 
 mod claude_code;
 mod codex;
@@ -83,6 +112,7 @@ pub fn supports_event(agent: &str, event: &str) -> bool {
     match agent {
         CODEX => CODEX_EVENTS.contains(&event),
         CLAUDE_CODE => CLAUDE_CODE_EVENTS.contains(&event),
+        DSH => DSH_EVENTS.contains(&event),
         _ => false,
     }
 }
@@ -90,6 +120,7 @@ pub fn supports_event(agent: &str, event: &str) -> bool {
 pub(crate) fn transcript_root(agent: &str) -> Result<Option<PathBuf>, String> {
     match agent {
         CODEX => Ok(None),
+        DSH => Ok(None),
         CLAUDE_CODE => claude_code::resolved_config_root().map(Some),
         _ => Err(format!("不支持的 Agent：{agent}")),
     }
@@ -138,6 +169,18 @@ pub fn status(agent: &str) -> Result<HookStatus, String> {
 }
 
 pub(crate) fn verification_fingerprint(agent: &str) -> Result<Option<String>, String> {
+    // DeepSeek Harness has no hooks/settings file to fingerprint. Its plugin is
+    // "installed" when our insert entry is present in the user patch layer, so
+    // a fingerprint records that fact plus the identity of the embedded plugin
+    // source. Basing it on the shipped source means an Agent Cat update that
+    // changes the plugin invalidates stale persisted verification.
+    if agent == DSH {
+        return Ok(if crate::dsh_profile::status()?.installed {
+            Some(crate::dsh_profile::source_fingerprint())
+        } else {
+            None
+        });
+    }
     let spec = spec(agent)?;
     let path = &spec.path;
     if !path.exists() {
