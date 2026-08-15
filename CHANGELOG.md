@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/LRainner/AgentCat/compare/v1.8.0...v1.9.0) (2026-08-15)
+
+
+### Features
+
+* **dsh:** integrate DeepSeek Harness ([#46](https://github.com/LRainner/AgentCat/issues/46)) ([917d863](https://github.com/LRainner/AgentCat/commit/917d863300b563a94970ff1891ffb5dd6c9af7b1))
+
 ## [1.8.0](https://github.com/LRainner/AgentCat/compare/v1.7.0...v1.8.0) (2026-08-07)
 
 
