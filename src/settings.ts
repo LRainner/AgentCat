@@ -1023,6 +1023,7 @@ document.querySelector("#connect-dsh")!.addEventListener("click", async (event) 
   const currentConfig = integrationConfig("dsh");
   const previousHooksEnabled = currentConfig.hooksEnabled;
   const previousShowLiveStatus = currentConfig.showLiveStatus;
+  let persisted = false;
   button.disabled = true;
   button.textContent = t("Connecting…");
   try {
@@ -1031,14 +1032,18 @@ document.querySelector("#connect-dsh")!.addEventListener("click", async (event) 
     currentConfig.showLiveStatus = true;
     bindConfig();
     await persist();
+    persisted = true;
     await invoke<HookRuntimeStatus>("probe_hook", { agent: "dsh" });
     await refreshHookStatus("dsh");
     showMessage(t("The DeepSeek Harness plugin was installed and the local test passed. Restart DeepSeek Harness to load the plugin, then start a task to verify."));
   } catch (error) {
-    // Keep the in-memory config consistent with disk if persistence failed.
-    currentConfig.hooksEnabled = previousHooksEnabled;
-    currentConfig.showLiveStatus = previousShowLiveStatus;
-    bindConfig();
+    // Only roll back the in-memory config when it was not saved to disk.
+    // Failures after persist() (probe/refresh) must keep memory and disk in sync.
+    if (!persisted) {
+      currentConfig.hooksEnabled = previousHooksEnabled;
+      currentConfig.showLiveStatus = previousShowLiveStatus;
+      bindConfig();
+    }
     await refreshHookStatus("dsh");
     showMessage(String(error), true);
   } finally {
@@ -1048,15 +1053,23 @@ document.querySelector("#connect-dsh")!.addEventListener("click", async (event) 
 });
 document.querySelector("#uninstall-dsh-hook")!.addEventListener("click", async (event) => {
   const button = event.currentTarget as HTMLButtonElement;
+  const currentConfig = integrationConfig("dsh");
+  const previousHooksEnabled = currentConfig.hooksEnabled;
+  let persisted = false;
   button.disabled = true;
   try {
     await invoke<DshHookStatus>("uninstall_dsh_hooks");
-    integrationConfig("dsh").hooksEnabled = false;
+    currentConfig.hooksEnabled = false;
     bindConfig();
     await persist();
+    persisted = true;
     await refreshHookStatus("dsh");
     showMessage(t("The DeepSeek Harness plugin was uninstalled"));
   } catch (error) {
+    if (!persisted) {
+      currentConfig.hooksEnabled = previousHooksEnabled;
+      bindConfig();
+    }
     await refreshHookStatus("dsh");
     showMessage(String(error), true);
   } finally {

@@ -112,9 +112,25 @@ fn profile_dirs(home: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// Every patch layer file that may carry our marker: one per existing profile
+/// plus the home-level patch when it exists. Uninstall and status use this to
+/// clean and detect markers left behind when the "active" layer changes (for
+/// example after the user later creates a home-level patch).
+fn all_patch_paths(home: &Path) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = profile_dirs(home)
+        .into_iter()
+        .map(|dir| dir.join("cordis.patch.yml"))
+        .collect();
+    let home_patch = home.join("cordis.patch.yml");
+    if home_patch.is_file() {
+        paths.push(home_patch);
+    }
+    paths
+}
+
 fn patch_paths(home: &Path) -> Vec<PathBuf> {
     // Home-level user patch layer (applied last, highest priority) covers every
-    // profile, so when it exists it is the ONLY layer we patch. Writing the
+    // profile, so when it exists it is the ONLY layer we write. Writing the
     // same plugin id into both a profile layer and the home layer would make
     // the final entry list contain duplicate ids, which Cordis' loader rejects.
     let home_patch = home.join("cordis.patch.yml");
@@ -125,6 +141,12 @@ fn patch_paths(home: &Path) -> Vec<PathBuf> {
         .into_iter()
         .map(|dir| dir.join("cordis.patch.yml"))
         .collect()
+}
+
+fn patch_contains_marker(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|content| content.contains(PATCH_MARKER))
+        .unwrap_or(false)
 }
 
 fn node_modules_dir(home: &Path) -> PathBuf {
@@ -306,19 +328,23 @@ fn status_at(home: &Path) -> Result<DshHookStatus, String> {
         .unwrap_or_else(|| home.join("cordis.patch.yml"));
     let patched_count = paths
         .iter()
-        .filter(|path| {
-            fs::read_to_string(path)
-                .map(|content| content.contains(PATCH_MARKER))
-                .unwrap_or(false)
-        })
+        .filter(|path| patch_contains_marker(path))
         .count();
     let patch_installed = !paths.is_empty() && patched_count == paths.len();
+    // Markers on layers that are no longer the active write target can break
+    // DSH (duplicate entry ids) or point at a deleted plugin package, so they
+    // make the integration report as not installed until Connect repairs them.
+    let has_residual_markers = all_patch_paths(home)
+        .iter()
+        .any(|path| !paths.contains(path) && patch_contains_marker(path));
     let plugin_root = node_modules_dir(home).join(PLUGIN_NAME);
     let plugin_source_exists = PLUGIN_FILES
         .iter()
         .all(|(relative, _)| plugin_root.join(relative).is_file());
-    let installed = patch_installed && plugin_source_exists;
-    let message = if installed {
+    let installed = patch_installed && plugin_source_exists && !has_residual_markers;
+    let message = if has_residual_markers {
+        "检测到其他补丁层存在残留安装，请重新连接以修复".to_string()
+    } else if installed {
         "DeepSeek Harness 插件已安装".to_string()
     } else if patch_installed && !plugin_source_exists {
         "插件入口存在，但插件包缺失；请重新连接以修复".to_string()
@@ -358,6 +384,20 @@ fn install_at(home: &Path) -> Result<DshHookStatus, String> {
         }
     }
     let paths = patch_paths(home);
+    // Remove our marker from any layer that is no longer the active write
+    // target, so a layer switch (e.g. the user later created a home patch)
+    // cannot leave duplicate ids or point at a deleted plugin package.
+    for path in all_patch_paths(home) {
+        if paths.contains(&path) || !path.is_file() {
+            continue;
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|error| format!("读取 {} 失败：{error}", path.display()))?;
+        let updated = remove_insert_block(&content);
+        if updated != content {
+            config::atomic_write(&path, updated.as_bytes())?;
+        }
+    }
     for path in &paths {
         let content = if path.is_file() {
             fs::read_to_string(path)
@@ -376,7 +416,9 @@ pub fn uninstall() -> Result<DshHookStatus, String> {
 }
 
 fn uninstall_at(home: &Path) -> Result<DshHookStatus, String> {
-    for path in patch_paths(home) {
+    // Sweep every layer that could carry our marker, not just the active one,
+    // so a layer switch can never leave a stale entry behind.
+    for path in all_patch_paths(home) {
         if path.is_file() {
             let content = fs::read_to_string(&path)
                 .map_err(|error| format!("读取 {} 失败：{error}", path.display()))?;
@@ -557,6 +599,60 @@ mod tests {
             let patch = home.join("profiles").join(name).join("cordis.patch.yml");
             assert!(!fs::read_to_string(patch).unwrap().contains(PATCH_MARKER));
         }
+
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn uninstall_sweeps_stale_profile_markers_after_a_home_patch_appears() {
+        let home = temp_home("stale-uninstall");
+        fs::create_dir_all(home.join("profiles").join("web")).unwrap();
+
+        install_at(&home).unwrap();
+        let web_patch = home.join("profiles").join("web").join("cordis.patch.yml");
+        assert!(fs::read_to_string(&web_patch)
+            .unwrap()
+            .contains(PATCH_MARKER));
+
+        // User later creates a home-level patch; profile markers become stale.
+        fs::write(home.join("cordis.patch.yml"), "# user\n[]\n").unwrap();
+        let status = status_at(&home).unwrap();
+        assert!(!status.installed);
+        assert!(status.message.contains("残留"));
+
+        let status = uninstall_at(&home).unwrap();
+        assert!(!status.installed);
+        assert!(!fs::read_to_string(&web_patch)
+            .unwrap()
+            .contains(PATCH_MARKER));
+        assert_eq!(
+            fs::read_to_string(home.join("cordis.patch.yml")).unwrap(),
+            "# user\n[]\n"
+        );
+
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn install_migrates_stale_profile_markers_to_the_home_layer() {
+        let home = temp_home("stale-install");
+        fs::create_dir_all(home.join("profiles").join("web")).unwrap();
+
+        install_at(&home).unwrap();
+        let web_patch = home.join("profiles").join("web").join("cordis.patch.yml");
+        assert!(fs::read_to_string(&web_patch)
+            .unwrap()
+            .contains(PATCH_MARKER));
+
+        fs::write(home.join("cordis.patch.yml"), "# user\n[]\n").unwrap();
+        let status = install_at(&home).unwrap();
+        assert!(status.installed);
+        assert!(!fs::read_to_string(&web_patch)
+            .unwrap()
+            .contains(PATCH_MARKER));
+        assert!(fs::read_to_string(home.join("cordis.patch.yml"))
+            .unwrap()
+            .contains(PATCH_MARKER));
 
         fs::remove_dir_all(&home).unwrap();
     }
