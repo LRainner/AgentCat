@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-agent-cat",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DeepSeek Harness plugin that forwards sanitized session lifecycle events to Agent Cat over a local socket.",
   "type": "module",
   "main": "lib/index.js",

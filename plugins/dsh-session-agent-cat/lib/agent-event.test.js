@@ -184,6 +184,20 @@ describe("mapSessionEvent", () => {
       .toMatchObject({ event: "PostCompact" });
   });
 
+  it("marks in-turn compaction as auto and standalone compaction as manual", () => {
+    const automatic = { compactionId: "c1", turn: 3 };
+    expect(mapSessionEvent(session(), event("compaction/start", automatic)))
+      .toMatchObject({ event: "PreCompact", compactTrigger: "auto" });
+    expect(mapSessionEvent(session(), event("compaction/end", automatic)))
+      .toMatchObject({ event: "PostCompact", compactTrigger: "auto" });
+
+    const standalone = { compactionId: "c2", sourceCommandId: "cmd-1", turn: null };
+    expect(mapSessionEvent(session(), event("compaction/start", standalone)))
+      .toMatchObject({ event: "PreCompact", compactTrigger: "manual" });
+    expect(mapSessionEvent(session(), event("compaction/end", standalone)))
+      .toMatchObject({ event: "PostCompact", compactTrigger: "manual" });
+  });
+
   it("produces no reaction for non-mapped event types", () => {
     expect(mapSessionEvent(session(), event("assistant/chunk", { turn: 1, step: 0, chunk: {} }))).toBeNull();
     expect(mapSessionEvent(session(), event("todo/write", { todos: [] }))).toBeNull();
