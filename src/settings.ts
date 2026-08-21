@@ -91,7 +91,7 @@ const settingsPageCopy: Record<SettingsPage, { eyebrow: string; title: MessageKe
   about: { eyebrow: "ABOUT", title: "About", description: "View the Agent Cat version and software updates." },
 };
 
-const sourceLabels: Record<PetSource, MessageKey> = { "codex-builtin": "Codex built-in", "codex-custom": "Codex custom pets", "user-folder": "Other directories" };
+const sourceLabels: Record<PetSource, MessageKey> = { "agent-cat-builtin": "Agent Cat built-in", "codex-builtin": "Codex built-in", "codex-custom": "Codex custom pets", "user-folder": "Other directories" };
 const eventLabels: Record<string, MessageKey> = {
   SessionStart: "Session started",
   UserPromptSubmit: "Task received",
@@ -568,7 +568,7 @@ async function refreshCatalog(): Promise<void> {
   catalog = await invoke<CatalogResult>("scan_pets");
   summary.textContent = `${t("{pets} available pets · {invalid} invalid resources", { pets: catalog.pets.length, invalid: catalog.diagnostics.length })}${catalog.codexBundles.length ? ` · Codex ${catalog.codexBundles[0].version ?? t("Unknown version")}` : ` · ${t("Codex.app not found")}`}`;
   catalogElement.replaceChildren();
-  for (const source of ["codex-builtin", "codex-custom", "user-folder"] as PetSource[]) {
+  for (const source of ["agent-cat-builtin", "codex-builtin", "codex-custom", "user-folder"] as PetSource[]) {
     const pets = catalog.pets.filter((pet) => pet.source === source);
     if (!pets.length) continue;
     const group = document.createElement("div");

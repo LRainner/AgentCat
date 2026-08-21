@@ -106,8 +106,9 @@ fn save_config(app: tauri::AppHandle, mut value: AppConfig) -> Result<(), String
 }
 
 #[tauri::command]
-fn scan_pets() -> Result<CatalogResult, String> {
-    pet_catalog::scan(&config::load()?)
+fn scan_pets(app: tauri::AppHandle) -> Result<CatalogResult, String> {
+    let resource_dir = app.path().resource_dir().ok();
+    pet_catalog::scan(&config::load()?, resource_dir.as_deref())
 }
 
 #[tauri::command]
@@ -910,6 +911,20 @@ mod tests {
                 .to_string_lossy()
                 .to_string()
         );
+    }
+
+    #[test]
+    fn bundled_monthly_salary_cat_has_transparent_unused_cells() {
+        let spritesheet = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../assets/pets/monthly-salary-cat/spritesheet.webp")
+            .to_string_lossy()
+            .to_string();
+
+        let inspection = inspect_sprite(spritesheet, 1).unwrap();
+
+        assert_eq!(inspection.unused_cells, 15);
+        assert_eq!(inspection.non_transparent_pixels, 0);
+        assert!(inspection.transparent);
     }
 
     #[test]
