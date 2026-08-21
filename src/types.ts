@@ -1,4 +1,4 @@
-export type PetSource = "codex-builtin" | "codex-custom" | "user-folder";
+export type PetSource = "agent-cat-builtin" | "codex-builtin" | "codex-custom" | "user-folder";
 
 export type PetDescriptor = {
   key: string;

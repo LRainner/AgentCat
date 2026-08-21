@@ -59,7 +59,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["../assets/**/*"],
+    "resources": {
+      "../assets/": "assets/"
+    },
     "macOS": {
       "minimumSystemVersion": "12.0",
       "signingIdentity": "-"

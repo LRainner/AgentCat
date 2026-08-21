@@ -41,14 +41,14 @@ fn decode_hook_command(command: &str) -> Option<String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .ok()?;
-    let mut chunks = bytes.chunks_exact(2);
-    let units: Vec<u16> = chunks
-        .by_ref()
-        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
-    if !chunks.remainder().is_empty() {
+    let (chunks, remainder) = bytes.as_chunks::<2>();
+    if !remainder.is_empty() {
         return None;
     }
+    let units: Vec<u16> = chunks
+        .iter()
+        .map(|chunk| u16::from_le_bytes(*chunk))
+        .collect();
     String::from_utf16(&units).ok()
 }
 

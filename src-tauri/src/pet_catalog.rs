@@ -31,11 +31,25 @@ pub struct CodexBundleSummary {
     pub version: Option<String>,
 }
 
-pub fn scan(app_config: &config::AppConfig) -> Result<CatalogResult, String> {
+pub fn scan(
+    app_config: &config::AppConfig,
+    bundled_resource_dir: Option<&Path>,
+) -> Result<CatalogResult, String> {
     let home = config::home_dir()?;
     let mut candidates: Vec<(PathBuf, &str, &str)> = Vec::new();
     let mut pets = Vec::new();
     let mut diagnostics = Vec::new();
+    if let Some(resource_dir) = bundled_resource_dir {
+        candidates.push((
+            resource_dir
+                .join("assets")
+                .join("pets")
+                .join("monthly-salary-cat")
+                .join("pet.json"),
+            "agent-cat-builtin",
+            "agent-cat-builtin",
+        ));
+    }
     let bundles = if app_config.pet_sources.scan_codex_builtin {
         codex_source::installed_bundles(&home)
     } else {
@@ -151,9 +165,10 @@ fn expand_home(value: &str, home: &Path) -> PathBuf {
 
 fn source_rank(source: &str) -> u8 {
     match source {
-        "codex-builtin" => 0,
-        "codex-custom" => 1,
-        _ => 2,
+        "agent-cat-builtin" => 0,
+        "codex-builtin" => 1,
+        "codex-custom" => 2,
+        _ => 3,
     }
 }
 
@@ -170,7 +185,7 @@ mod tests {
             .join("../fixtures")
             .to_string_lossy()
             .to_string()];
-        let result = scan(&value).unwrap();
+        let result = scan(&value, None).unwrap();
         assert_eq!(result.pets.len(), 2);
         assert_eq!(result.diagnostics.len(), 2);
         assert_eq!(
@@ -181,5 +196,21 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 2]
         );
+    }
+
+    #[test]
+    fn bundles_monthly_salary_cat_as_the_default_pet() {
+        let mut value = config::AppConfig::default();
+        value.pet_sources.scan_codex_builtin = false;
+        value.pet_sources.scan_codex_custom = false;
+        let resource_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+
+        let result = scan(&value, Some(&resource_dir)).unwrap();
+        let pet = result.pets.first().expect("bundled monthly salary cat");
+
+        assert_eq!(pet.id, "monthly-salary-cat");
+        assert_eq!(pet.source, "agent-cat-builtin");
+        assert_eq!(pet.version, 1);
+        assert_eq!((pet.width, pet.height), (1536, 1872));
     }
 }

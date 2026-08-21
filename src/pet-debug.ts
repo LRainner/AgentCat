@@ -37,7 +37,7 @@ async function initialize(): Promise<void> {
     return option;
   }));
   if (!pets.length) { validation.textContent = t("No pets are available for testing"); return; }
-  const initialIndex = Math.max(0, pets.findIndex((pet) => pet.source === "codex-builtin"));
+  const initialIndex = Math.max(0, pets.findIndex((pet) => pet.source === "agent-cat-builtin"));
   select.value = String(initialIndex);
   await loadPet(initialIndex);
   buildButtons();

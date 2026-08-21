@@ -152,6 +152,7 @@
   "Show Pet": { "en": "Show Pet", "cn": "显示宠物" },
   "Quit Agent Cat": { "en": "Quit Agent Cat", "cn": "退出 Agent Cat" },
   "Codex built-in": { "en": "Codex built-in", "cn": "Codex 内置" },
+  "Agent Cat built-in": { "en": "Agent Cat built-in", "cn": "Agent Cat 内置" },
   "Codex custom pets": { "en": "Codex custom pets", "cn": "Codex 自定义宠物" },
   "Other directories": { "en": "Other directories", "cn": "其他目录" },
   "New version v{version} found": { "en": "New version v{version} found", "cn": "发现新版本 v{version}" },

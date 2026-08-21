@@ -1,0 +1,7 @@
+{
+  "id": "monthly-salary-cat",
+  "displayName": "Monthly salary cat（月薪猫）",
+  "description": "The original white-and-brown teary cat at its computer, bundled with Agent Cat.",
+  "spriteVersionNumber": 1,
+  "spritesheetPath": "spritesheet.webp"
+}
