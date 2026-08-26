@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/LRainner/AgentCat/compare/v1.9.1...v1.10.0) (2026-08-21)
+
+
+### Features
+
+* **pets:** bundle Monthly Salary Cat as the default pet ([#50](https://github.com/LRainner/AgentCat/issues/50)) ([425ce53](https://github.com/LRainner/AgentCat/commit/425ce5325336bb1b73fd96e70c05875eb96b2db8))
+
 ## [1.9.1](https://github.com/LRainner/AgentCat/compare/v1.9.0...v1.9.1) (2026-08-15)
 
 
