@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_TERMINAL_SESSIONS,
   MAX_TERMINAL_TURNS,
+  endsAgentTurn,
   TerminalEventLedger,
 } from "./terminal-event-ledger";
 import type { AgentEvent } from "./types";
@@ -12,6 +13,13 @@ function event(sessionId: string, turnId: string, name: AgentEventName, timestam
 }
 
 describe("TerminalEventLedger", () => {
+  it("does not end the parent turn for active background or subagent stops", () => {
+    const stop = event("session", "turn-1", "Stop", 1);
+    expect(endsAgentTurn(stop)).toBe(true);
+    expect(endsAgentTurn({ ...stop, hasActiveBackgroundTasks: true })).toBe(false);
+    expect(endsAgentTurn({ ...stop, isSubagent: true })).toBe(false);
+  });
+
   it("bounds terminal session and turn tombstones", () => {
     const ledger = new TerminalEventLedger();
     for (let index = 0; index <= Math.max(MAX_TERMINAL_SESSIONS, MAX_TERMINAL_TURNS); index += 1) {

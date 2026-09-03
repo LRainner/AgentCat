@@ -234,6 +234,8 @@
   "New task received. Analyzing requirements.": { "en": "New task received. Analyzing requirements.", "cn": "已收到新任务，正在分析需求" },
   "Sub-agent started. Collaborating on the task.": { "en": "Sub-agent started. Collaborating on the task.", "cn": "子 Agent 已启动，正在协作处理任务" },
   "Sub-agent completed. Integrating the result.": { "en": "Sub-agent completed. Integrating the result.", "cn": "子 Agent 已结束，正在整合协作结果" },
+  "Background agents are still working. Waiting for their results.": { "en": "Background agents are still working. Waiting for their results.", "cn": "后台 Agent 仍在工作，正在等待协作结果" },
+  "A sub-agent stopped with an error. Continuing the parent task.": { "en": "A sub-agent stopped with an error. Continuing the parent task.", "cn": "子 Agent 异常结束，父任务仍在继续" },
   "Context compaction started. Organizing the session.": { "en": "Context compaction started. Organizing the session.", "cn": "上下文压缩已开始，正在整理会话" },
   "Manual context compaction completed": { "en": "Manual context compaction completed", "cn": "手动上下文压缩已完成" },
   "Automatic context compaction completed. Continuing the task.": { "en": "Automatic context compaction completed. Continuing the task.", "cn": "自动上下文压缩已完成，正在继续任务" },

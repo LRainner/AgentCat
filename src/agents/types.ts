@@ -30,6 +30,8 @@ export type RawAgentEvent = {
   turnId?: string;
   sessionSource?: string;
   compactTrigger?: string;
+  isSubagent?: boolean;
+  hasActiveBackgroundTasks?: boolean;
 };
 
 export type AgentEvent = Omit<RawAgentEvent, "version" | "event"> & {

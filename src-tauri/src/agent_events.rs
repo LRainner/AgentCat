@@ -22,6 +22,10 @@ pub struct AgentEvent {
     pub session_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compact_trigger: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_subagent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_active_background_tasks: Option<bool>,
 }
 
 static LATEST_EVENT: OnceLock<Mutex<Option<AgentEvent>>> = OnceLock::new();

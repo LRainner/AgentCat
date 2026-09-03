@@ -23,7 +23,17 @@ export function agentEventKey(payload: AgentEvent): string {
     payload.toolName ?? "",
     payload.sessionSource ?? "",
     payload.compactTrigger ?? "",
+    payload.isSubagent ? "subagent" : "",
+    payload.hasActiveBackgroundTasks ? "background-active" : "",
   ].join(":");
+}
+
+export function endsAgentTurn(payload: AgentEvent): boolean {
+  return (
+    payload.event === "Stop"
+    || payload.event === "StopFailure"
+    || payload.event === "TurnInterrupted"
+  ) && !payload.isSubagent && !payload.hasActiveBackgroundTasks;
 }
 
 export class TerminalEventLedger {
