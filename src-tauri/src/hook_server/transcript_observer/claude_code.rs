@@ -8,7 +8,6 @@ use std::{
 };
 
 const INTERRUPTED_MARKER: &[u8] = b"Request interrupted by user";
-const TURN_DURATION_MARKER: &[u8] = b"turn_duration";
 const MAX_SESSION_FILE_BYTES: u64 = 16 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -36,10 +35,7 @@ pub(super) fn terminal(
     let may_be_interrupted = line
         .windows(INTERRUPTED_MARKER.len())
         .any(|window| window == INTERRUPTED_MARKER);
-    let may_be_completed = line
-        .windows(TURN_DURATION_MARKER.len())
-        .any(|window| window == TURN_DURATION_MARKER);
-    if !may_be_interrupted && !may_be_completed {
+    if !may_be_interrupted {
         return None;
     }
     let line: Value = serde_json::from_slice(line).ok()?;
@@ -49,15 +45,6 @@ pub(super) fn terminal(
         .or_else(|| line.get("session_id").and_then(Value::as_str))?;
     if transcript_session_id != session_id {
         return None;
-    }
-    if may_be_completed
-        && line.get("type").and_then(Value::as_str) == Some("system")
-        && line.get("subtype").and_then(Value::as_str) == Some("turn_duration")
-    {
-        return Some(TranscriptTerminal {
-            kind: TranscriptTerminalKind::Completed,
-            turn_id: active_turn_id.map(str::to_string),
-        });
     }
     if line.get("type").and_then(Value::as_str) != Some("user")
         || line.get("isSidechain").and_then(Value::as_bool) == Some(true)
@@ -202,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn detects_only_structured_turn_completion_records() {
+    fn ignores_turn_duration_records_while_background_work_may_continue() {
         let completed = serde_json::json!({
             "type": "system",
             "subtype": "turn_duration",
@@ -211,22 +198,6 @@ mod tests {
         });
         assert_eq!(
             terminal(&serde_json::to_vec(&completed).unwrap(), "session-1", None),
-            Some(TranscriptTerminal {
-                kind: TranscriptTerminalKind::Completed,
-                turn_id: None,
-            })
-        );
-        assert_eq!(
-            terminal(
-                &serde_json::to_vec(&serde_json::json!({
-                    "type": "user",
-                    "sessionId": "session-1",
-                    "message": { "role": "user", "content": "turn_duration" }
-                }))
-                .unwrap(),
-                "session-1",
-                None
-            ),
             None
         );
     }

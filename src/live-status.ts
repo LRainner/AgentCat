@@ -1,5 +1,5 @@
 import type { AgentEvent, AgentLiveStatus, AgentStatusPhase } from "./types";
-import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
+import { agentEventKey, endsAgentTurn, TerminalEventLedger } from "./terminal-event-ledger";
 import { agentDisplayName, agentSessionKey } from "./agents";
 import { t } from "./i18n";
 
@@ -90,8 +90,13 @@ function eventPresentation(payload: AgentEvent): EventPresentation | null {
       ? transient("done", t("Manual context compaction completed"), COMPACT_DONE_TIMEOUT_MS)
       : active("thinking", t("Automatic context compaction completed. Continuing the task."));
     case "PermissionRequest": return active("waiting", t("{agent} requests confirmation. Return to {agent} to respond.", { agent: agentName }));
-    case "Stop": return transient("done", t("{agent} completed the current task", { agent: agentName }), TASK_DONE_TIMEOUT_MS);
-    case "StopFailure": return transient("error", t("The current {agent} task ended because of a service error", { agent: agentName }), ERROR_TIMEOUT_MS);
+    case "Stop":
+      if (payload.isSubagent) return active("thinking", t("Sub-agent completed. Integrating the result."));
+      if (payload.hasActiveBackgroundTasks) return active("thinking", t("Background agents are still working. Waiting for their results."));
+      return transient("done", t("{agent} completed the current task", { agent: agentName }), TASK_DONE_TIMEOUT_MS);
+    case "StopFailure":
+      if (payload.isSubagent) return active("thinking", t("A sub-agent stopped with an error. Continuing the parent task."));
+      return transient("error", t("The current {agent} task ended because of a service error", { agent: agentName }), ERROR_TIMEOUT_MS);
     case "SessionEnd": return transient("done", t("{agent} session ended", { agent: agentName }), SESSION_END_TIMEOUT_MS);
     case "TurnInterrupted": return transient("interrupted", t("The current task was interrupted"), INTERRUPTED_TIMEOUT_MS);
     case "HookParseError": return transient("error", t("Agent Cat could not parse the latest {agent} status", { agent: agentName }), ERROR_TIMEOUT_MS);
@@ -136,7 +141,7 @@ export class LiveStatusController {
       this.dismissedSessions.delete(sessionKey);
     }
     this.terminalEvents.recordActivity(payload);
-    if (payload.event === "Stop" || payload.event === "StopFailure" || payload.event === "TurnInterrupted") {
+    if (endsAgentTurn(payload)) {
       this.terminalEvents.recordTurn(payload, eventKey);
     } else if (payload.event === "SessionEnd") {
       this.terminalEvents.recordSessionEnd(payload, eventKey);

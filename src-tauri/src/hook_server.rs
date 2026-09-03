@@ -78,6 +78,9 @@ struct HookInput {
     session_id: Option<String>,
     hook_event_name: Option<String>,
     turn_id: Option<String>,
+    agent_id: Option<String>,
+    #[serde(default)]
+    background_tasks: Vec<serde::de::IgnoredAny>,
     transcript_path: Option<PathBuf>,
     display_title: Option<String>,
     source: Option<String>,
@@ -272,6 +275,8 @@ pub fn test_event(app: &AppHandle, agent: &str, event: &str) -> Result<(), Strin
             turn_id: None,
             session_source: None,
             compact_trigger: None,
+            is_subagent: None,
+            has_active_background_tasks: None,
         },
     );
     Ok(())
@@ -376,6 +381,8 @@ fn emit_parse_error(app: &AppHandle, agent: &str) {
             turn_id: None,
             session_source: None,
             compact_trigger: None,
+            is_subagent: None,
+            has_active_background_tasks: None,
         },
     );
 }
@@ -434,6 +441,14 @@ fn build_event(
                 None
             }
         });
+    let is_subagent = (agent == hook_installer::CLAUDE_CODE
+        && input
+            .agent_id
+            .as_deref()
+            .and_then(sanitize_identifier)
+            .is_some())
+    .then_some(true);
+    let has_active_background_tasks = (!input.background_tasks.is_empty()).then_some(true);
     Ok(AgentEvent {
         version: 1,
         agent: agent.into(),
@@ -445,6 +460,8 @@ fn build_event(
         turn_id: input.turn_id.as_deref().and_then(sanitize_identifier),
         session_source: input.source.as_deref().and_then(sanitize_hook_token),
         compact_trigger: input.trigger.as_deref().and_then(sanitize_hook_token),
+        is_subagent,
+        has_active_background_tasks,
     })
 }
 
@@ -474,6 +491,14 @@ fn validate_incoming_event(mut event: AgentEvent) -> Result<AgentEvent, String> 
         .compact_trigger
         .as_deref()
         .and_then(sanitize_hook_token);
+    if event.agent == hook_installer::CLAUDE_CODE {
+        event.is_subagent = (event.is_subagent == Some(true)).then_some(true);
+        event.has_active_background_tasks =
+            (event.has_active_background_tasks == Some(true)).then_some(true);
+    } else {
+        event.is_subagent = None;
+        event.has_active_background_tasks = None;
+    }
     Ok(event)
 }
 
@@ -600,6 +625,8 @@ mod tests {
             session_id: Some("session".into()),
             hook_event_name: Some("UserPromptSubmit".into()),
             turn_id: Some("turn-1".into()),
+            agent_id: None,
+            background_tasks: Vec::new(),
             transcript_path: None,
             display_title: None,
             source: None,
@@ -633,6 +660,8 @@ mod tests {
             session_id: Some("session".into()),
             hook_event_name: Some("FutureEvent".into()),
             turn_id: None,
+            agent_id: None,
+            background_tasks: Vec::new(),
             transcript_path: None,
             display_title: None,
             source: None,
@@ -653,6 +682,8 @@ mod tests {
             turn_id: Some("turn-1".into()),
             session_source: Some("COMPACT".into()),
             compact_trigger: Some("manual".into()),
+            is_subagent: None,
+            has_active_background_tasks: None,
         })
         .unwrap();
         assert_eq!(event.title.as_deref(), Some("hello world"));
@@ -679,6 +710,8 @@ mod tests {
             turn_id: None,
             session_source: None,
             compact_trigger: None,
+            is_subagent: None,
+            has_active_background_tasks: None,
         };
 
         assert!(is_real_agent_event(&event("session-1", "SessionStart")));
@@ -702,6 +735,8 @@ mod tests {
                 turn_id: Some("turn-1".into()),
                 session_source: None,
                 compact_trigger: None,
+                is_subagent: None,
+                has_active_background_tasks: None,
             },
             transcript_path: Some("/private/transcript.jsonl".into()),
         };
@@ -731,5 +766,30 @@ mod tests {
             incoming_agent_hint(&serde_json::to_vec(&event).unwrap()).as_deref(),
             Some("claude-code")
         );
+    }
+
+    #[test]
+    fn claude_code_hook_keeps_only_subagent_and_background_activity_flags() {
+        let input: HookInput = serde_json::from_value(serde_json::json!({
+            "session_id": "claude-session",
+            "hook_event_name": "Stop",
+            "agent_id": "a243f905527191087",
+            "agent_type": "Explore",
+            "background_tasks": [{
+                "id": "task-1",
+                "status": "running",
+                "description": "private task description",
+                "command": "private command"
+            }]
+        }))
+        .unwrap();
+        let event = build_event(hook_installer::CLAUDE_CODE, input, false, 42).unwrap();
+        assert_eq!(event.is_subagent, Some(true));
+        assert_eq!(event.has_active_background_tasks, Some(true));
+
+        let serialized = serde_json::to_string(&event).unwrap();
+        assert!(!serialized.contains("a243f905527191087"));
+        assert!(!serialized.contains("private task description"));
+        assert!(!serialized.contains("private command"));
     }
 }

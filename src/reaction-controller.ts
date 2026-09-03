@@ -1,6 +1,6 @@
 import type { AnimationName } from "./animation-table";
 import { PetRenderer } from "./pet-renderer";
-import { agentEventKey, TerminalEventLedger } from "./terminal-event-ledger";
+import { agentEventKey, endsAgentTurn, TerminalEventLedger } from "./terminal-event-ledger";
 import { agentSessionKey } from "./agents";
 import type { AgentEvent } from "./types";
 
@@ -76,23 +76,35 @@ export class ReactionController {
         session.base = "waiting";
         break;
       case "Stop":
-        session.base = "idle";
-        session.compactResumeBase = null;
-        this.terminalEvents.recordTurn(payload, eventKey);
-        reaction = "complete";
+        if (endsAgentTurn(payload)) {
+          session.base = "idle";
+          session.compactResumeBase = null;
+          this.terminalEvents.recordTurn(payload, eventKey);
+          reaction = "complete";
+        } else {
+          session.base = "working";
+        }
         break;
       case "StopFailure":
-        session.base = "idle";
-        session.compactResumeBase = null;
-        this.terminalEvents.recordTurn(payload, eventKey);
-        reaction = "failed";
+        if (endsAgentTurn(payload)) {
+          session.base = "idle";
+          session.compactResumeBase = null;
+          this.terminalEvents.recordTurn(payload, eventKey);
+          reaction = "failed";
+        } else {
+          session.base = "working";
+        }
         break;
       case "TurnInterrupted":
-        session.base = "idle";
-        session.compactResumeBase = null;
-        this.terminalEvents.recordTurn(payload, eventKey);
-        this.queue = [];
-        this.playingReaction = false;
+        if (endsAgentTurn(payload)) {
+          session.base = "idle";
+          session.compactResumeBase = null;
+          this.terminalEvents.recordTurn(payload, eventKey);
+          this.queue = [];
+          this.playingReaction = false;
+        } else {
+          session.base = "working";
+        }
         break;
       case "SessionEnd":
         this.clearSessionTimer(session);

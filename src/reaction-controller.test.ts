@@ -48,6 +48,46 @@ describe("ReactionController", () => {
     vi.useRealTimers();
   });
 
+  it("keeps working until Claude background subagents return to the parent", () => {
+    vi.useFakeTimers();
+    const { calls, controller } = harness();
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "UserPromptSubmit", timestamp: 1 });
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "SubagentStart", timestamp: 2 });
+    controller.setAgentEvent({
+      version: 1,
+      agent: "claude-code",
+      sessionId: "s",
+      event: "Stop",
+      timestamp: 3,
+      hasActiveBackgroundTasks: true,
+    });
+    controller.setAgentEvent({
+      version: 1,
+      agent: "claude-code",
+      sessionId: "s",
+      event: "PreToolUse",
+      timestamp: 4,
+      toolName: "Read",
+      isSubagent: true,
+    });
+    controller.setAgentEvent({
+      version: 1,
+      agent: "claude-code",
+      sessionId: "s",
+      event: "Stop",
+      timestamp: 5,
+      isSubagent: true,
+    });
+
+    expect(calls.at(-1)).toBe("running");
+    expect(calls).not.toContain("review");
+
+    controller.setAgentEvent({ version: 1, agent: "claude-code", sessionId: "s", event: "Stop", timestamp: 6 });
+    expect(calls.at(-1)).toBe("review");
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
   it("ignores duplicate and late events after completion", () => {
     vi.useFakeTimers();
     const { calls, controller } = harness();

@@ -125,10 +125,12 @@ pub(super) fn handle_hook_event(event: &AgentEvent, transcript_path: Option<&Pat
         entries.remove(&watch_key);
         return;
     }
+    let keeps_working = keeps_working_after_hook(event);
     if matches!(
         event.event.as_str(),
         "Stop" | "StopFailure" | "TurnInterrupted"
-    ) {
+    ) && !keeps_working
+    {
         if let Some(entry) = entries.get_mut(&watch_key) {
             mark_terminal(entry, event.turn_id.as_deref());
         }
@@ -157,7 +159,7 @@ pub(super) fn handle_hook_event(event: &AgentEvent, transcript_path: Option<&Pat
             | "PreCompact"
             | "PostCompact"
             | "PermissionRequest"
-    );
+    ) || keeps_working;
     let validated_path = transcript_path
         .and_then(|path| validate_transcript_path(&event.agent, path, &event.session_id));
     let transcript_path = validated_path.or_else(|| {
@@ -240,6 +242,12 @@ pub(super) fn handle_hook_event(event: &AgentEvent, transcript_path: Option<&Pat
     }
 }
 
+fn keeps_working_after_hook(event: &AgentEvent) -> bool {
+    event.agent == hook_installer::CLAUDE_CODE
+        && matches!(event.event.as_str(), "Stop" | "StopFailure")
+        && (event.is_subagent == Some(true) || event.has_active_background_tasks == Some(true))
+}
+
 fn watch_key(agent: &str, session_id: &str) -> String {
     format!("{agent}\0{session_id}")
 }
@@ -302,6 +310,8 @@ fn commit_poll_result(
         turn_id: terminal.turn_id,
         session_source: None,
         compact_trigger: None,
+        is_subagent: None,
+        has_active_background_tasks: None,
     })
 }
 
@@ -491,6 +501,43 @@ mod tests {
             idle_observed_at: None,
             active: true,
         }
+    }
+
+    fn hook_event(agent: &str, event: &str) -> AgentEvent {
+        AgentEvent {
+            version: 1,
+            agent: agent.into(),
+            session_id: "session-1".into(),
+            event: event.into(),
+            timestamp: 1,
+            title: None,
+            tool_name: None,
+            turn_id: None,
+            session_source: None,
+            compact_trigger: None,
+            is_subagent: None,
+            has_active_background_tasks: None,
+        }
+    }
+
+    #[test]
+    fn keeps_observing_non_terminal_claude_stops() {
+        let mut background = hook_event(hook_installer::CLAUDE_CODE, "Stop");
+        background.has_active_background_tasks = Some(true);
+        assert!(keeps_working_after_hook(&background));
+
+        let mut subagent = hook_event(hook_installer::CLAUDE_CODE, "StopFailure");
+        subagent.is_subagent = Some(true);
+        assert!(keeps_working_after_hook(&subagent));
+
+        assert!(!keeps_working_after_hook(&hook_event(
+            hook_installer::CLAUDE_CODE,
+            "Stop"
+        )));
+        assert!(!keeps_working_after_hook(&hook_event(
+            hook_installer::CODEX,
+            "Stop"
+        )));
     }
 
     #[test]

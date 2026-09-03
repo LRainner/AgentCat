@@ -316,4 +316,37 @@ describe("LiveStatusController", () => {
     controller.dispose();
     vi.useRealTimers();
   });
+
+  it("accepts subagent updates after a non-terminal Claude background stop", () => {
+    vi.useFakeTimers();
+    const updates: AgentLiveStatus[][] = [];
+    const controller = new LiveStatusController((statuses) => updates.push(statuses));
+    controller.setAgentEvent(event("UserPromptSubmit", 1, { agent: "claude-code" }));
+    controller.setAgentEvent(event("Stop", 2, {
+      agent: "claude-code",
+      hasActiveBackgroundTasks: true,
+    }));
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      phase: "thinking",
+      detail: "后台 Agent 仍在工作，正在等待协作结果",
+    });
+
+    controller.setAgentEvent(event("PreToolUse", 3, {
+      agent: "claude-code",
+      toolName: "Read",
+      isSubagent: true,
+    }));
+    expect(updates.at(-1)?.[0]).toMatchObject({ phase: "tool" });
+
+    controller.setAgentEvent(event("Stop", 4, { agent: "claude-code", isSubagent: true }));
+    expect(updates.at(-1)?.[0]).toMatchObject({
+      phase: "thinking",
+      detail: "子 Agent 已结束，正在整合协作结果",
+    });
+
+    controller.setAgentEvent(event("Stop", 5, { agent: "claude-code" }));
+    expect(updates.at(-1)?.[0]).toMatchObject({ phase: "done" });
+    controller.dispose();
+    vi.useRealTimers();
+  });
 });
