@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/LRainner/AgentCat/compare/v1.10.0...v1.10.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **claude:** handle background subagent lifecycle ([#52](https://github.com/LRainner/AgentCat/issues/52)) ([e38f7ff](https://github.com/LRainner/AgentCat/commit/e38f7ffd0df9106fe6311714586fec4c24943718))
+
 ## [1.10.0](https://github.com/LRainner/AgentCat/compare/v1.9.1...v1.10.0) (2026-08-21)
 
 
