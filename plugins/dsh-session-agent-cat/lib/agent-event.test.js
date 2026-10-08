@@ -13,6 +13,7 @@ function toolNames(sessionId, entries) {
   return new Map(entries.map(([callId, name]) => [`${sessionId}\0${callId}`, name]));
 }
 
+// DSH 0.1 shape: `toolCallId`/`isError` live in a nested `tool-result` block.
 function toolResultData({ callId = "c1", isError = false, text = "ok" } = {}) {
   return {
     turn: 1,
@@ -24,6 +25,20 @@ function toolResultData({ callId = "c1", isError = false, text = "ok" } = {}) {
         content: [{ type: "text", text }],
         isError,
       }],
+    },
+  };
+}
+
+// DSH 0.2 shape: both fields moved onto the message.
+function toolResultDataV2({ callId = "c1", isError = false, text = "ok" } = {}) {
+  return {
+    turn: 1,
+    step: 0,
+    message: {
+      role: "tool",
+      toolCallId: callId,
+      ...(isError ? { isError: true } : {}),
+      content: [{ type: "text", text }],
     },
   };
 }
@@ -137,6 +152,35 @@ describe("mapSessionEvent", () => {
       toolNames("session-1", [["c1", "Bash"]]),
     );
     expect(mapped).toMatchObject({ event: "PostToolUseFailure", toolName: "Bash" });
+  });
+
+  // Reading only the 0.1 block degraded every 0.2 result to a nameless
+  // PostToolUse, so both shapes are covered.
+  it("recovers the tool name for a 0.2-shaped successful tool/result", () => {
+    const mapped = mapSessionEvent(
+      session(),
+      event("tool/result", toolResultDataV2()),
+      toolNames("session-1", [["c1", "Bash"]]),
+    );
+    expect(mapped).toMatchObject({ event: "PostToolUse", toolName: "Bash" });
+  });
+
+  it("maps a 0.2-shaped failing tool/result to PostToolUseFailure", () => {
+    const mapped = mapSessionEvent(
+      session(),
+      event("tool/result", toolResultDataV2({ isError: true })),
+      toolNames("session-1", [["c1", "Bash"]]),
+    );
+    expect(mapped).toMatchObject({ event: "PostToolUseFailure", toolName: "Bash" });
+  });
+
+  it("treats a 0.2-shaped result without isError as a success", () => {
+    const mapped = mapSessionEvent(
+      session(),
+      event("tool/result", toolResultDataV2({ isError: false })),
+      toolNames("session-1", [["c1", "Bash"]]),
+    );
+    expect(mapped).toMatchObject({ event: "PostToolUse", toolName: "Bash" });
   });
 
   it("emits no tool name when the result callId is unknown", () => {
