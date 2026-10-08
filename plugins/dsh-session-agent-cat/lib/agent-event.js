@@ -48,10 +48,19 @@ function firstPromptLine(content) {
   return undefined;
 }
 
-function isToolResultError(data) {
-  // `tool/result.data.message.content[].isError` is the tool outcome flag.
+// DSH 0.2 moved `toolCallId`/`isError` off the nested `tool-result` block onto
+// the message itself; 0.1 kept them in the block. Read both.
+function toolResultFacts(data) {
   const message = data?.message;
-  return Array.isArray(message?.content) && message.content.some((block) => block?.isError === true);
+  const content = Array.isArray(message?.content) ? message.content : [];
+  const nested = content.find((block) => block?.type === "tool-result");
+
+  const toolCallId = message?.toolCallId ?? nested?.toolCallId;
+  const isError = message?.isError === true
+    || nested?.isError === true
+    || content.some((block) => block?.isError === true);
+
+  return { toolCallId, isError };
 }
 
 function compactionTrigger(data) {
@@ -113,12 +122,11 @@ export function mapSessionEvent(session, event, toolNames) {
     case "tool/result": {
       const data = event.data;
       // `tool/result` does not carry the tool name. Recover it from the
-      // `tool/call` cache via the `toolCallId` carried by the result block.
-      const callId = data?.message?.content?.[0]?.toolCallId;
+      // `tool/call` cache via the call id the result correlates with.
+      const { toolCallId, isError } = toolResultFacts(data);
       const toolName = sanitizeToolName(
-        typeof callId === "string" ? toolNames?.get(`${sessionId}\0${callId}`) : undefined,
+        typeof toolCallId === "string" ? toolNames?.get(`${sessionId}\0${toolCallId}`) : undefined,
       );
-      const isError = isToolResultError(data);
       return { ...base, event: isError ? "PostToolUseFailure" : "PostToolUse", ...(toolName ? { toolName } : {}) };
     }
 
