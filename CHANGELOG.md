@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.2](https://github.com/LRainner/AgentCat/compare/v1.10.1...v1.10.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **dsh:** support DSH 0.2 tool result payload ([#55](https://github.com/LRainner/AgentCat/issues/55)) ([53b2667](https://github.com/LRainner/AgentCat/commit/53b26674d60844af360900b136f75bc1d6b5db57))
+
 ## [1.10.1](https://github.com/LRainner/AgentCat/compare/v1.10.0...v1.10.1) (2026-09-03)
 
 
