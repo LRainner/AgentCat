@@ -14,6 +14,8 @@ import {
 } from "./agents";
 import { nativeMessages, setLanguage, t, translateDocument } from "./i18n";
 
+const FULLSCREEN_EVENT = "agent-cat-fullscreen-changed";
+
 const statusWindow = getCurrentWindow();
 const shell = document.querySelector<HTMLElement>("#status-shell")!;
 const stack = document.querySelector<HTMLElement>("#status-stack")!;
@@ -125,8 +127,11 @@ async function render(statuses: AgentLiveStatus[]): Promise<void> {
   const height = contentHeight(statuses.length);
   shell.style.setProperty("--content-height", `${height}px`);
   shell.hidden = false;
-  await invoke("sync_status_window", { contentHeight: height });
-  await statusWindow.show();
+  // The backend owns the window's visibility: it reveals the bubble without
+  // taking keyboard focus, and reports here when an application is fullscreen so
+  // that a later agent event does not bring the bubble back over it.
+  const mustStayHidden = await invoke<boolean>("sync_status_window", { contentHeight: height });
+  if (mustStayHidden) await statusWindow.hide();
 }
 
 function queueRender(statuses = controller.getStatuses()): Promise<void> {
@@ -183,6 +188,7 @@ void listen<AppConfig>("agent-cat-config-preview", ({ payload }) => {
   queueRender();
 });
 void listen("agent-cat-config-changed", () => void loadConfig());
+void listen<boolean>(FULLSCREEN_EVENT, () => queueRender());
 window.addEventListener("beforeunload", () => controller.dispose());
 function toggleStack(): void {
   if (controller.getStatuses().length < 2) return;

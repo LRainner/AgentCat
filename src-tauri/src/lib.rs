@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
 };
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -70,6 +73,24 @@ struct NativeMessages {
 
 struct StatusWindowState(Mutex<f64>);
 
+/// Emitted when an application enters or leaves fullscreen, so the status window
+/// can render again after its bubble was hidden automatically.
+const FULLSCREEN_EVENT: &str = "agent-cat-fullscreen-changed";
+
+/// Tracks a hide that Agent Cat performed itself, so the tray's "Show Pet"
+/// checkbox keeps reflecting the user's intent rather than the window's
+/// momentary visibility.
+#[derive(Default)]
+struct FullscreenHideState {
+    /// Set while Agent Cat hid the pet because an application went fullscreen.
+    hidden: AtomicBool,
+    /// Set while the status bubble is hidden for the same reason.
+    status_hidden: AtomicBool,
+    /// The most recent fullscreen state the observer reported. Kept so that a
+    /// preference change can be reconciled without waiting for another event.
+    fullscreen: AtomicBool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PointerSnapshot {
@@ -102,6 +123,12 @@ fn save_config(app: tauri::AppHandle, mut value: AppConfig) -> Result<(), String
         value.codex.hooks_enabled,
         value.claude_code.hooks_enabled,
     );
+    // Toggling the fullscreen preference produces no window event of its own, so
+    // the pet is reconciled here against the fullscreen state last observed.
+    if let Some(state) = app.try_state::<FullscreenHideState>() {
+        let fullscreen = state.fullscreen.load(Ordering::Acquire);
+        apply_fullscreen_visibility(&app, fullscreen)?;
+    }
     Ok(())
 }
 
@@ -210,13 +237,13 @@ fn start_dragging(
 fn apply_window_settings(app: tauri::AppHandle, value: WindowConfig) -> Result<(), String> {
     apply_main_window_settings(&app, &value)?;
     let app_config = config::load()?;
-    sync_status_window_with_config(&app, &app_config, None)
+    sync_status_window_with_config(&app, &app_config, None).map(|_| ())
 }
 
 #[tauri::command]
 fn apply_config_preview(app: tauri::AppHandle, value: AppConfig) -> Result<(), String> {
     apply_main_window_settings(&app, &value.window)?;
-    sync_status_window_with_config(&app, &value, None)
+    sync_status_window_with_config(&app, &value, None).map(|_| ())
 }
 
 fn apply_main_window_settings(app: &tauri::AppHandle, value: &WindowConfig) -> Result<(), String> {
@@ -248,17 +275,43 @@ fn capture_main_position(app: &tauri::AppHandle, value: &mut WindowConfig) -> Re
     Ok(())
 }
 
+/// Reports whether the status bubble has to stay hidden.
+///
+/// The renderer reveals the window itself, so it needs to know that an
+/// application is fullscreen; otherwise every agent event would bring the bubble
+/// back over the fullscreen application.
+fn status_hidden_by_fullscreen(app: &tauri::AppHandle, value: &AppConfig) -> bool {
+    value.behavior.hide_in_fullscreen
+        && app
+            .try_state::<FullscreenHideState>()
+            .is_some_and(|state| state.fullscreen.load(Ordering::Acquire))
+}
+
+/// Repositions the status window for the renderer and reveals it.
+///
+/// Returns whether the caller must leave it hidden, which is the case while an
+/// application is fullscreen. Revealing happens here rather than in the renderer
+/// so the bubble never takes keyboard focus: its own `show()` would make the
+/// window key on macOS and activate it on Windows. The shared helper deliberately
+/// does not reveal, because settings previews call it too.
 #[tauri::command]
-fn sync_status_window(app: tauri::AppHandle, content_height: Option<f64>) -> Result<(), String> {
+fn sync_status_window(app: tauri::AppHandle, content_height: Option<f64>) -> Result<bool, String> {
     let value = config::load()?;
-    sync_status_window_with_config(&app, &value, content_height)
+    let must_stay_hidden = sync_status_window_with_config(&app, &value, content_height)?;
+    if !must_stay_hidden {
+        let status = app
+            .get_webview_window("status")
+            .ok_or_else(|| "状态窗口不存在".to_string())?;
+        platform::reveal_without_focus(&status)?;
+    }
+    Ok(must_stay_hidden)
 }
 
 fn sync_status_window_with_config(
     app: &tauri::AppHandle,
     value: &AppConfig,
     content_height: Option<f64>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let status = app
         .get_webview_window("status")
         .ok_or_else(|| "状态窗口不存在".to_string())?;
@@ -284,7 +337,7 @@ fn sync_status_window_with_config(
         .map_err(|error| error.to_string())?;
     if !has_live_status_source(value) {
         status.hide().map_err(|error| error.to_string())?;
-        return Ok(());
+        return Ok(true);
     }
 
     let main = app
@@ -315,7 +368,7 @@ fn sync_status_window_with_config(
         .set_position(PhysicalPosition::new(x, y))
         .map_err(|error| error.to_string())?;
     drop(content_height_state);
-    Ok(())
+    Ok(status_hidden_by_fullscreen(app, value))
 }
 
 fn has_live_status_source(value: &AppConfig) -> bool {
@@ -386,6 +439,7 @@ fn toggle_window_setting(app: &tauri::AppHandle, id: &str) -> Result<(), String>
         .map_err(|error| error.to_string())
 }
 
+/// Shows the pet for an explicit user request, which may take keyboard focus.
 fn show_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     app.show().map_err(|error| error.to_string())?;
@@ -398,6 +452,18 @@ fn show_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|error| error.to_string())
 }
 
+/// Shows the pet after an automatic hide, without taking keyboard focus.
+///
+/// Leaving fullscreen usually means the user kept typing in the application that
+/// was fullscreen, so activation here would steal the caret away from it.
+fn restore_main_window(app: &tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "宠物窗口不存在".to_string())?;
+    window.unminimize().map_err(|error| error.to_string())?;
+    platform::reveal_without_focus(&window)
+}
+
 fn toggle_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     let should_show = app
         .try_state::<TrayMenuState>()
@@ -408,10 +474,80 @@ fn toggle_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "宠物窗口不存在".to_string())?;
+    // A manual tray action always ends the fullscreen override, so leaving
+    // fullscreen later never contradicts what the user just chose.
+    let (was_hidden_by_fullscreen, fullscreen) = app
+        .try_state::<FullscreenHideState>()
+        .map(|state| {
+            (
+                state.hidden.swap(false, Ordering::AcqRel),
+                state.fullscreen.load(Ordering::Acquire),
+            )
+        })
+        .unwrap_or((false, false));
     if should_show {
+        if was_hidden_by_fullscreen {
+            // Asking for the pet outranks auto-hiding, so the preference that
+            // caused the hide is switched off instead of re-hiding immediately.
+            let mut value = config::load()?;
+            value.behavior.hide_in_fullscreen = false;
+            config::save(&value)?;
+            let _ = app.emit("agent-cat-config-changed", ());
+            // Reconciled because this path writes the file directly rather than
+            // through `save_config`: without it the status bubble would keep a
+            // hidden flag the new preference no longer describes, and turning the
+            // option back on would then fail to hide it again.
+            apply_fullscreen_visibility(app, fullscreen)?;
+        }
         show_main_window(app)?;
     } else {
         window.hide().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn set_tray_show_pet(app: &tauri::AppHandle, shown: bool) {
+    if let Some(menu) = app.try_state::<TrayMenuState>() {
+        let _ = menu.show_pet.set_checked(shown);
+    }
+}
+
+/// Hides or restores Agent Cat's windows when the active Space enters or leaves
+/// fullscreen.
+fn apply_fullscreen_visibility(app: &tauri::AppHandle, fullscreen: bool) -> Result<(), String> {
+    let Some(state) = app.try_state::<FullscreenHideState>() else {
+        return Ok(());
+    };
+    state.fullscreen.store(fullscreen, Ordering::Release);
+    let hide = fullscreen && config::load()?.behavior.hide_in_fullscreen;
+
+    // The pet stays tracked on its own because a manual tray toggle also ends its
+    // override, which must not disturb the status bubble.
+    if hide {
+        // Only an on-screen pet is ours to hide; a tray hide is the user's call
+        // and must not be undone when fullscreen ends.
+        if let Some(window) = app.get_webview_window("main") {
+            if window.is_visible().unwrap_or(false) {
+                state.hidden.store(true, Ordering::Release);
+                // Keep the tray checkbox matching the screen so one click restores it.
+                set_tray_show_pet(app, false);
+                window.hide().map_err(|error| error.to_string())?;
+            }
+        }
+    } else if state.hidden.swap(false, Ordering::AcqRel) {
+        set_tray_show_pet(app, true);
+        restore_main_window(app)?;
+    }
+
+    // The status bubble reveals itself from the renderer on every agent event, so
+    // it is hidden here as well and the renderer is told to leave it hidden.
+    if state.status_hidden.swap(hide, Ordering::AcqRel) != hide {
+        if hide {
+            if let Some(status) = app.get_webview_window("status") {
+                status.hide().map_err(|error| error.to_string())?;
+            }
+        }
+        let _ = app.emit(FULLSCREEN_EVENT, hide);
     }
     Ok(())
 }
@@ -850,6 +986,7 @@ pub fn run() {
             }
             let value = config::load().map_err(std::io::Error::other)?;
             setup_tray(app, &value).map_err(std::io::Error::other)?;
+            app.manage(FullscreenHideState::default());
             {
                 if let Some(window) = app.get_webview_window("main") {
                     window_drag::install(&window, app.handle().clone())
@@ -875,6 +1012,19 @@ pub fn run() {
             if args.iter().any(|arg| arg == "--pet-debug") {
                 show_aux_window(app.handle(), "pet-debug").map_err(std::io::Error::other)?;
             }
+            // Started unconditionally so toggling the option in settings takes
+            // effect immediately; the preference is re-read on every change.
+            let handle = app.handle().clone();
+            platform::start_fullscreen_observer(move |fullscreen| {
+                // Window and tray updates belong on the main thread, and the
+                // observer reports from a poll thread on Windows.
+                let target = handle.clone();
+                let worker = target.clone();
+                let _ = target.run_on_main_thread(move || {
+                    let _ = apply_fullscreen_visibility(&worker, fullscreen);
+                });
+            })
+            .map_err(std::io::Error::other)?;
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -26,7 +26,7 @@ export type AppConfig = {
   pet: { source: PetSource; id: string; manifestPath: string } | null;
   petSources: { scanCodexBuiltin: boolean; scanCodexCustom: boolean; extraDirectories: string[] };
   window: { x: number | null; y: number | null; scale: number; petOpacity: number; alwaysOnTop: boolean; mousePassthrough: boolean; lockPosition: boolean };
-  behavior: { followPointer: boolean; pointerRadius: number; pointerDeadzone: number; clickToWave: boolean; doubleClickToJump: boolean };
+  behavior: { followPointer: boolean; pointerRadius: number; pointerDeadzone: number; clickToWave: boolean; doubleClickToJump: boolean; hideInFullscreen: boolean };
   codex: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean; bubbleScale: number; bubbleOpacity: number };
   claudeCode: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean };
   dsh: { hooksEnabled: boolean; showLiveStatus: boolean; showTaskSummary: boolean };

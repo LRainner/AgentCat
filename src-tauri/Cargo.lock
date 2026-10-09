@@ -13,6 +13,9 @@ name = "agent-cat"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
+ "block2",
+ "core-foundation",
+ "core-graphics",
  "image",
  "objc2",
  "objc2-app-kit",

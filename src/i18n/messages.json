@@ -39,6 +39,7 @@
   "Look at pointer while idle": { "en": "Look at pointer while idle", "cn": "空闲时看向鼠标" },
   "Wave on click": { "en": "Wave on click", "cn": "单击挥手" },
   "Jump on double-click": { "en": "Jump on double-click", "cn": "双击跳跃" },
+  "Hide in fullscreen": { "en": "Hide in fullscreen", "cn": "全屏时隐藏" },
   "Response radius": { "en": "Response radius", "cn": "响应半径" },
   "Center dead zone": { "en": "Center dead zone", "cn": "中心死区" },
   "Supported agents": { "en": "Supported agents", "cn": "已支持的智能体" },
