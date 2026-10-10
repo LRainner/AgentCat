@@ -76,6 +76,8 @@ pub struct BehaviorConfig {
     pub pointer_deadzone: f64,
     pub click_to_wave: bool,
     pub double_click_to_jump: bool,
+    #[serde(default = "default_true")]
+    pub hide_in_fullscreen: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,6 +175,7 @@ impl Default for AppConfig {
                 pointer_deadzone: 36.0,
                 click_to_wave: true,
                 double_click_to_jump: true,
+                hide_in_fullscreen: true,
             },
             codex: CodexConfig {
                 hooks_enabled: true,
@@ -368,6 +371,17 @@ mod tests {
         assert!(app.dsh.show_live_status);
         assert!(app.dsh.show_task_summary);
         assert_eq!(app.language, LanguagePreference::System);
+        // Configs written before the fullscreen option existed must stay loadable.
+        assert!(app.behavior.hide_in_fullscreen);
+    }
+
+    #[test]
+    fn fullscreen_preference_round_trips() {
+        let mut value = AppConfig::default();
+        value.behavior.hide_in_fullscreen = false;
+        let encoded = serde_json::to_vec_pretty(&value).unwrap();
+        let decoded: AppConfig = serde_json::from_slice(&encoded).unwrap();
+        assert!(!decoded.behavior.hide_in_fullscreen);
     }
 
     #[cfg(unix)]

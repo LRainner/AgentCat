@@ -490,6 +490,7 @@ function bindConfig(): void {
   input("follow-pointer").checked = config.behavior.followPointer;
   input("click-wave").checked = config.behavior.clickToWave;
   input("double-jump").checked = config.behavior.doubleClickToJump;
+  input("hide-fullscreen").checked = config.behavior.hideInFullscreen;
   for (const agent of integrationIds) {
     const definition = integrationDefinitions[agent];
     const currentConfig = integrationConfig(agent);
@@ -862,6 +863,7 @@ for (const [id, apply] of [
   ["follow-pointer", (value: boolean) => config.behavior.followPointer = value],
   ["click-wave", (value: boolean) => config.behavior.clickToWave = value],
   ["double-jump", (value: boolean) => config.behavior.doubleClickToJump = value],
+  ["hide-fullscreen", (value: boolean) => config.behavior.hideInFullscreen = value],
 ] as const) input(id).addEventListener("change", async (event) => {
   apply((event.target as HTMLInputElement).checked);
   await persist();
