@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/LRainner/AgentCat/compare/v1.10.2...v1.11.0) (2026-10-10)
+
+
+### Features
+
+* **pet:** hide Agent Cat while an app is fullscreen ([#57](https://github.com/LRainner/AgentCat/issues/57)) ([38a2e02](https://github.com/LRainner/AgentCat/commit/38a2e0210883ad2205e8b66fc55b2eb1595da018))
+
 ## [1.10.2](https://github.com/LRainner/AgentCat/compare/v1.10.1...v1.10.2) (2026-10-08)
 
 
