@@ -22,9 +22,9 @@ use windows_sys::Win32::{
         Shell::{SHQueryUserNotificationState, ShellExecuteW, QUNS_RUNNING_D3D_FULL_SCREEN},
         WindowsAndMessaging::{
             DispatchMessageW, GetClassNameW, GetForegroundWindow, GetMessageW, GetShellWindow,
-            GetWindowRect, IsZoomed, ShowWindow, TranslateMessage, CHILDID_SELF,
-            EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_FOREGROUND, MSG, OBJID_WINDOW, SW_SHOWNA,
-            SW_SHOWNORMAL, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+            GetWindowRect, IsZoomed, TranslateMessage, CHILDID_SELF, EVENT_OBJECT_LOCATIONCHANGE,
+            EVENT_SYSTEM_FOREGROUND, MSG, OBJID_WINDOW, SW_SHOWNORMAL, WINEVENT_OUTOFCONTEXT,
+            WINEVENT_SKIPOWNPROCESS,
         },
     },
 };
@@ -87,15 +87,16 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Shows the pet without activating Agent Cat.
+/// Reveals a window that Agent Cat hid itself.
 ///
-/// `WebviewWindow::show` activates the window, which would take keyboard focus
-/// away from whatever the user is doing, so an automatic restore shows it with
-/// `SW_SHOWNA` instead.
-pub fn reveal_without_focus(window: &WebviewWindow) -> Result<(), String> {
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?.0;
-    unsafe { ShowWindow(hwnd, SW_SHOWNA) };
-    Ok(())
+/// Goes through the runtime rather than calling `ShowWindow` here. The runtime
+/// keeps visibility in a window flag and only applies it when that flag changes,
+/// so showing a window behind its back leaves the flag reporting "hidden" and the
+/// next hide is then skipped as a no-op, which made the tray toggle take three
+/// clicks. The cost is that `SW_SHOW` activates the window, so this does take
+/// keyboard focus on Windows.
+pub fn reveal_window(window: &WebviewWindow) -> Result<(), String> {
+    window.show().map_err(|error| error.to_string())
 }
 
 /// Watches shell window events and forwards fullscreen transitions.
