@@ -46,12 +46,13 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Shows the pet without activating Agent Cat.
+/// Reveals a window that Agent Cat hid itself, without activating Agent Cat.
 ///
 /// `WebviewWindow::show` reaches `makeKeyAndOrderFront:`, which would take
-/// keyboard focus away from whatever the user is doing, so an automatic restore
-/// orders the window front instead.
-pub fn reveal_without_focus(window: &WebviewWindow) -> Result<(), String> {
+/// keyboard focus away from whatever the user is doing, so the window is ordered
+/// front instead. AppKit reports visibility from the window itself and never
+/// diffs it, so revealing this way cannot desynchronise the runtime.
+pub fn reveal_window(window: &WebviewWindow) -> Result<(), String> {
     let handle = window.ns_window().map_err(|error| error.to_string())?;
     if handle.is_null() {
         return Err("宠物窗口句柄不可用".to_string());

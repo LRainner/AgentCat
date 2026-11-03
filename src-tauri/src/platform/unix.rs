@@ -14,8 +14,8 @@ pub fn reveal_in_file_manager(path: &Path) -> Result<(), String> {
 }
 
 /// There is no desktop-independent way to raise a window without activating it,
-/// so the automatic restore falls back to the ordinary show here.
-pub fn reveal_without_focus(window: &WebviewWindow) -> Result<(), String> {
+/// so this falls back to the ordinary show.
+pub fn reveal_window(window: &WebviewWindow) -> Result<(), String> {
     window.show().map_err(|error| error.to_string())
 }
 

@@ -290,10 +290,13 @@ fn status_hidden_by_fullscreen(app: &tauri::AppHandle, value: &AppConfig) -> boo
 /// Repositions the status window for the renderer and reveals it.
 ///
 /// Returns whether the caller must leave it hidden, which is the case while an
-/// application is fullscreen. Revealing happens here rather than in the renderer
-/// so the bubble never takes keyboard focus: its own `show()` would make the
-/// window key on macOS and activate it on Windows. The shared helper deliberately
-/// does not reveal, because settings previews call it too.
+/// application is fullscreen. The shared helper deliberately does not reveal,
+/// because settings previews call it too.
+///
+/// Revealing here orders the window front on macOS, so the bubble never takes
+/// keyboard focus there. On Windows the reveal has to go through the runtime's
+/// show, which does activate the window; `platform::reveal_window` records why
+/// bypassing the runtime is not an option.
 #[tauri::command]
 fn sync_status_window(app: tauri::AppHandle, content_height: Option<f64>) -> Result<bool, String> {
     let value = config::load()?;
@@ -302,7 +305,7 @@ fn sync_status_window(app: tauri::AppHandle, content_height: Option<f64>) -> Res
         let status = app
             .get_webview_window("status")
             .ok_or_else(|| "状态窗口不存在".to_string())?;
-        platform::reveal_without_focus(&status)?;
+        platform::reveal_window(&status)?;
     }
     Ok(must_stay_hidden)
 }
@@ -461,7 +464,7 @@ fn restore_main_window(app: &tauri::AppHandle) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or_else(|| "宠物窗口不存在".to_string())?;
     window.unminimize().map_err(|error| error.to_string())?;
-    platform::reveal_without_focus(&window)
+    platform::reveal_window(&window)
 }
 
 fn toggle_main_window(app: &tauri::AppHandle) -> Result<(), String> {
