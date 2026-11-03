@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/LRainner/AgentCat/compare/v1.11.0...v1.11.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **tray:** keep window visibility in sync with the runtime ([#59](https://github.com/LRainner/AgentCat/issues/59)) ([f4d264b](https://github.com/LRainner/AgentCat/commit/f4d264bcf016a2c032554f70331f8e06a7a77024))
+
 ## [1.11.0](https://github.com/LRainner/AgentCat/compare/v1.10.2...v1.11.0) (2026-10-10)
 
 
